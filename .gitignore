@@ -1,0 +1,14 @@
+# .gitignore
+.env
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.idea/
+.vscode/
+data/*.pdf
+data/*.md
+!data/shipping_policy.md  # 允许保留一个示例文件
+.pytest_cache/
