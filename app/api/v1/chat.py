@@ -4,8 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from app.core.security import get_current_user_id
 from app.api.v1.schemas import ChatRequest
-# 直接从 workflow 模块导入 app_graph (它会在 main.py 启动时被赋值)
-from app.graph.workflow import app_graph # 确保 app_graph 已被正确导入和初始化
 from langchain_core.runnables import RunnableConfig 
 
 router = APIRouter()
@@ -15,7 +13,15 @@ async def chat(
     request: ChatRequest,
     current_user_id: int = Depends(get_current_user_id)
 ):
-    # 确保 app_graph 已经被编译 (这个检查仍然重要)
+    """
+    聊天接口：支持订单查询和政策咨询
+    
+    - ORDER:  查询用户自己的订单
+    - POLICY: 从知识库检索政策信息
+    """
+    # 在函数内部导入，避免模块加载顺序问题
+    from app.graph.workflow import app_graph
+    
     if app_graph is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -23,11 +29,14 @@ async def chat(
         )
 
     async def event_generator():
+        """SSE 流式响应生成器"""
+        from app.graph.workflow import app_graph
+        
         thread_id = f"{current_user_id}_{request.thread_id}" 
-        config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+        config: RunnableConfig = {"configurable": {"thread_id":  thread_id}}
 
         initial_state = {
-            "question": request.question,
+            "question":  request.question,
             "user_id": current_user_id,
             "history": [], 
             "context": [],
@@ -41,6 +50,7 @@ async def chat(
             ):
                 kind = event["event"]
                 
+                # 只处理 LLM 流式输出
                 if kind == "on_chat_model_stream":
                     data = event.get("data")
                     if data and isinstance(data, dict):
@@ -52,7 +62,9 @@ async def chat(
                                 yield f"data: {payload}\n\n"
 
             yield "data: [DONE]\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            
+        except Exception as e: 
+            error_msg = json.dumps({'error': str(e)}, ensure_ascii=False)
+            yield f"data: {error_msg}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text-event-stream")
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
