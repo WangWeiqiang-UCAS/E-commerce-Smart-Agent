@@ -216,12 +216,22 @@ async def generate(state: AgentState) -> dict:
 
 
 # 意图识别的 System Prompt
-INTENT_PROMPT = """你是一个电商客服分类器。你的任务是根据用户的输入，将其归类为以下三种意图之一：
-- "ORDER":  用户询问关于他们自己的订单状态、物流、详情等。
-- "POLICY": 用户询问关于平台通用的退换货、运费、时效等政策信息。
-- "OTHER": 用户进行闲聊、打招呼或提出与上述无关的问题。
+INTENT_PROMPT = """你是一个电商客服分类器。你的任务是根据用户的输入，将其归类为以下四种意图之一：
 
-只返回分类标签（ORDER/POLICY/OTHER），不要返回任何其他文字。"""
+- "ORDER":   用户询问关于他们自己的订单状态、物流、详情等（但不是退货）。
+  示例："我的订单到哪了？"、"查询订单 SN20240001"
+
+- "POLICY":  用户询问关于平台通用的退换货、运费、时效等政策信息。
+  示例："内衣可以退货吗？"、"运费怎么算？"
+
+- "REFUND": 用户明确表示要办理退货、退款、换货等售后服务。
+  示例："我要退货"、"申请退款"、"这个订单我不要了"
+
+- "OTHER": 用户进行闲聊、打招呼或提出与上述无关的问题。
+  示例："你好"、"讲个笑话"
+
+只返回分类标签（ORDER/POLICY/REFUND/OTHER），不要返回任何其他文字。"""
+
 
 async def intent_router(state: AgentState):
     """
@@ -229,14 +239,15 @@ async def intent_router(state: AgentState):
     """
     print(f"🧠 [Router] 正在分析意图:  {state['question']}")
     
-    response = await llm.ainvoke([
+    response = await llm. ainvoke([
         SystemMessage(content=INTENT_PROMPT),
         HumanMessage(content=state["question"])
     ])
     
     intent = response.content.strip().upper()
+    
     # 容错处理
-    if intent not in ["ORDER", "POLICY", "OTHER"]:
+    if intent not in ["ORDER", "POLICY", "REFUND", "OTHER"]:
         intent = "OTHER"
         
     print(f"🎯 [Router] 识别结果: {intent}")
@@ -290,6 +301,54 @@ async def query_order(state: AgentState):
     )
     
     return {
-        "order_data":  order. model_dump(), 
+        "order_data":  order.model_dump(), 
         "context": [order_context]
     }
+
+
+async def handle_refund(state: AgentState) -> dict:
+    """
+    退货流程节点：调用退货子图处理完整流程
+    """
+    print(f"🔄 [Refund] 启动退货流程")
+    
+    from app.graph.refund_subgraph import refund_subgraph
+    
+    # 构造子图初始状态
+    subgraph_state = {
+        "user_id": state["user_id"],
+        "question": state["question"],
+        "order_sn": None,
+        "order_id": None,
+        "eligibility_check": None,
+        "reason_detail": None,
+        "reason_category": None,
+        "current_step": "extract_order",
+        "needs_user_input": False,
+        "response":  ""
+    }
+    
+    # 调用子图
+    result = await refund_subgraph.ainvoke(subgraph_state)
+    
+    # 提取子图返回的结果
+    response = result.get("response", "退货流程处理中...")
+    needs_input = result.get("needs_user_input", False)
+    
+    print(f" [Refund] 子图执行完成")
+    print(f" 需要用户输入: {needs_input}")
+    
+    # 如果需要用户输入，标记退货流程为活跃状态
+    if needs_input: 
+        return {
+            "answer": response,
+            "refund_flow_active": True,
+            "refund_order_sn": result.get("order_sn"),
+            "refund_step": result.get("current_step")
+        }
+    else:
+        # 流程结束，直接返回最终结果
+        return {
+            "answer": response,
+            "refund_flow_active":  False
+        }

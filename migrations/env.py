@@ -13,6 +13,7 @@ from sqlmodel import SQLModel
 # 导入所有模型以确保被注册
 from app.models.knowledge import KnowledgeChunk 
 from app.models.order import User, Order
+from app.models.refund import RefundApplication
 
 config = context.config
 
