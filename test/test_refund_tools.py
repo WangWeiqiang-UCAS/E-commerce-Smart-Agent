@@ -1,4 +1,4 @@
-# scripts/test_refund_tools.py
+# test/test_refund_tools.py
 import asyncio
 import sys
 from pathlib import Path

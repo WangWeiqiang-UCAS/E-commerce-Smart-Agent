@@ -27,7 +27,12 @@ pypdf = "^6.6.0"
 tenacity = "^9.1.2"
 pyjwt = "^2.10.1"
 langgraph-checkpoint-redis = "^0.3.2"
-
+celery = "^5.6.2"
+websockets = "^14.1"
+gradio = "^6.3.0"
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+bcrypt = "3.2.2"
+email-validator = "^2.3.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.14.11"

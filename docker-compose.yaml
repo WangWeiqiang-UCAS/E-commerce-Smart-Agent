@@ -22,14 +22,54 @@ services:
 
   # 会话记忆缓存：Redis
   redis:
-    image: redis:alpine
-    container_name: agent_redis
-    restart: always
+    image: redis:7-alpine
+    container_name: ecommerce_redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # v4.0 新增:  Celery Worker
+  celery_worker: 
+    build: .
+    container_name: ecommerce_celery_worker
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=4 -E
+    depends_on:
+      postgres: 
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+    restart: unless-stopped
+
+  # FastAPI 应用
+  app:
+    build: .
+    container_name: ecommerce_app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition:  service_healthy
+      celery_worker:
+        condition: service_started
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+    restart: unless-stopped
 
 volumes:
-  postgres_data:
+  postgres_data: 
   redis_data:

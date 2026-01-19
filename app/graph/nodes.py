@@ -5,13 +5,21 @@ from langchain_core.embeddings import Embeddings
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
-from app.core. config import settings
+from app.core.config import settings
 from app.core.database import async_session_maker
 from app.models.knowledge import KnowledgeChunk
 from app.models.order import Order
 from app.graph.state import AgentState
 from sqlmodel import select
 from pydantic import SecretStr
+from app.models.refund import RefundApplication, RefundStatus
+from app.models.audit import AuditLog, RiskLevel, AuditAction
+from app.websocket.manager import manager
+from app.tasks.refund_tasks import notify_admin_audit
+from datetime import datetime, timezone
+from app.models.refund import  RefundReason
+import re
+
 
 # 相似度阈值：只有距离 < 0.5 才认为相关
 SIMILARITY_THRESHOLD = 0.5
@@ -42,7 +50,7 @@ class QwenEmbeddings(Embeddings):
             response = await client.post(
                 f"{self.base_url}/embeddings",
                 headers={
-                    "Authorization": f"Bearer {self. api_key}",
+                    "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json"
                 },
                 json={
@@ -69,15 +77,15 @@ class QwenEmbeddings(Embeddings):
 
 # 1. Embedding 模型（使用自定义适配器）
 embedding_model = QwenEmbeddings(
-    base_url=settings. OPENAI_BASE_URL,
-    api_key=settings. OPENAI_API_KEY,
+    base_url=settings.OPENAI_BASE_URL,
+    api_key=settings.OPENAI_API_KEY,
     model=settings.EMBEDDING_MODEL,
     dimensions=settings.EMBEDDING_DIM
 )
 
 # 2. LLM 模型 (用于生成回答)
 llm = ChatOpenAI(
-    base_url=settings. OPENAI_BASE_URL,
+    base_url=settings.OPENAI_BASE_URL,
     api_key=SecretStr(settings.OPENAI_API_KEY),
     model=settings.LLM_MODEL,
     temperature=0 
@@ -113,11 +121,11 @@ async def retrieve(state: AgentState) -> dict:
     print(f"🔍 [Retrieve] 正在检索: {question}")
 
     # 生成查询向量
-    query_vector = await embedding_model. aembed_query(question)
+    query_vector = await embedding_model.aembed_query(question)
 
     async with async_session_maker() as session:
         # 查询最相似的 chunk
-        distance_col = KnowledgeChunk.embedding. cosine_distance(query_vector).label("distance") # type: ignore
+        distance_col = KnowledgeChunk.embedding.cosine_distance(query_vector).label("distance") # type: ignore
         
         stmt = (
             select(KnowledgeChunk, distance_col)
@@ -134,11 +142,11 @@ async def retrieve(state: AgentState) -> dict:
         print(f"   - 内容片段: {chunk.content[: 10]}...  | 距离分:  {distance:.4f}")
         
         if distance < SIMILARITY_THRESHOLD: 
-            valid_chunks.append(chunk. content)
+            valid_chunks.append(chunk.content)
         else:
-            print(f"   ❌ 距离过大，已丢弃")
+            print(f"    距离过大，已丢弃")
 
-    print(f"📄 [Retrieve] 最终有效记录: {len(valid_chunks)} 条")
+    print(f" [Retrieve] 最终有效记录: {len(valid_chunks)} 条")
     return {"context": valid_chunks}
 
 
@@ -154,13 +162,13 @@ GENERATE_SYSTEM_PROMPT = """
 """
 
 async def generate(state: AgentState) -> dict:
-    print("🤖 [Generate] 正在生成综合回复...")
+    print(" [Generate] 正在生成综合回复...")
     
     # 1. 组装参考信息
     context_parts = []
     
     # 加入政策背景
-    if state. get("context"):
+    if state.get("context"):
         context_parts.append("【相关政策】:\n" + "\n".join(state["context"]))
     
     # 加入订单背景
@@ -237,9 +245,9 @@ async def intent_router(state: AgentState):
     """
     意图识别节点：判断用户想干什么
     """
-    print(f"🧠 [Router] 正在分析意图:  {state['question']}")
+    print(f" [Router] 正在分析意图:  {state['question']}")
     
-    response = await llm. ainvoke([
+    response = await llm.ainvoke([
         SystemMessage(content=INTENT_PROMPT),
         HumanMessage(content=state["question"])
     ])
@@ -250,7 +258,7 @@ async def intent_router(state: AgentState):
     if intent not in ["ORDER", "POLICY", "REFUND", "OTHER"]:
         intent = "OTHER"
         
-    print(f"🎯 [Router] 识别结果: {intent}")
+    print(f" [Router] 识别结果: {intent}")
     return {"intent": intent}
 
 async def query_order(state: AgentState):
@@ -261,11 +269,11 @@ async def query_order(state: AgentState):
     user_id = state["user_id"]
     
     import re
-    order_sn_match = re.search(r'SN\d+', question. upper())
+    order_sn_match = re.search(r'SN\d+', question.upper())
     
     # 构造查询
     if not order_sn_match: 
-        print("🔎 [QueryOrder] 获取用户最近订单")
+        print(" [QueryOrder] 获取用户最近订单")
         stmt = (
             select(Order)
             .where(Order.user_id == user_id)
@@ -274,7 +282,7 @@ async def query_order(state: AgentState):
         )
     else:
         order_sn = order_sn_match.group()
-        print(f"🔎 [QueryOrder] 查询订单号: {order_sn}")
+        print(f" [QueryOrder] 查询订单号: {order_sn}")
         stmt = select(Order).where(
             Order.order_sn == order_sn,
             Order.user_id == user_id 
@@ -308,47 +316,215 @@ async def query_order(state: AgentState):
 
 async def handle_refund(state: AgentState) -> dict:
     """
-    退货流程节点：调用退货子图处理完整流程
+    退货流程节点：处理退货申请
+    
+
     """
-    print(f"🔄 [Refund] 启动退货流程")
+    print(f" [Refund] 启动退货流程")
     
-    from app.graph.refund_subgraph import refund_subgraph
+    question = state["question"]
+    user_id = state["user_id"]
     
-    # 构造子图初始状态
-    subgraph_state = {
-        "user_id": state["user_id"],
-        "question": state["question"],
-        "order_sn": None,
-        "order_id": None,
-        "eligibility_check": None,
-        "reason_detail": None,
-        "reason_category": None,
-        "current_step": "extract_order",
-        "needs_user_input": False,
-        "response":  ""
+    # 1. 提取订单号
+    order_sn_match = re.search(r'(SN\d+)', question, re.IGNORECASE)
+    
+    if not order_sn_match:
+        return {
+            "answer": " 请提供订单号。例如：我要退货，订单号 SN20240003",
+            "refund_flow_active": False
+        }
+    
+    order_sn = order_sn_match.group(1).upper()
+    print(f" [Refund] 订单号: {order_sn}")
+    
+    # 2. 查询订单
+    async with async_session_maker() as session:
+        result = await session.execute(
+            select(Order).where(
+                Order.order_sn == order_sn,
+                Order.user_id == user_id
+            )
+        )
+        order = result.scalar_one_or_none()
+        
+        if not order: 
+            return {
+                "answer":  f" 未找到订单 {order_sn}，请确认订单号是否正确。",
+                "refund_flow_active": False
+            }
+        
+        # 3. 检查订单状态
+        if order.status not in ["PAID", "SHIPPED", "DELIVERED"]:
+            return {
+                "answer": f" 订单 {order_sn} 当前状态为 {order.status}，不符合退货条件。",
+                "refund_flow_active": False
+            }
+        
+        # 4. 检查商品是否可退货（简化版）
+        items = order.items
+        non_returnable = []
+        for item in items:
+            # 示例：内衣不可退货
+            if "内衣" in item.get("name", ""):
+                non_returnable.append(item["name"])
+        
+        if non_returnable:
+            return {
+                "answer": f" 该订单包含不可退货商品：{', '.join(non_returnable)}。根据平台政策，贴身衣物拆封后不支持退货。",
+                "refund_flow_active": False
+            }
+        
+        # 5. 提取退货原因
+        reason_detail = question
+        
+        # 简单的原因分类
+        if "质量" in question or "破损" in question:
+            reason_category = RefundReason.QUALITY_ISSUE
+        elif "尺码" in question or "大小" in question or "不合适" in question:
+            reason_category = RefundReason.SIZE_NOT_FIT
+        elif "不符" in question or "描述" in question:
+            reason_category = RefundReason.NOT_AS_DESCRIBED
+        else: 
+            reason_category = RefundReason.OTHER
+        
+        # 6. 创建退货申请
+        refund = RefundApplication(
+            order_id=order.id,
+            user_id=user_id,
+            status=RefundStatus.PENDING,
+            reason_category=reason_category,
+            reason_detail=reason_detail,
+            refund_amount=float(order.total_amount)
+        )
+        
+        session.add(refund)
+        await session.commit()
+        await session.refresh(refund)
+        
+        print(f" [Refund] 退货申请已创建:  ID={refund.id}, Amount=¥{refund.refund_amount}")
+        
+        # 7. 返回退货数据，交给审核节点处理
+        return {
+            "order_data": order.model_dump(),
+            "refund_data": {
+                "refund_id": refund.id,
+                "order_id": order.id,
+                "order_sn": order_sn,
+                "amount": float(refund.refund_amount),
+                "reason": reason_detail,
+                "reason_category": reason_category
+            },
+            "answer": "" # 留空，等待后续节点生成
+        }
+
+
+async def check_refund_eligibility(state: AgentState) -> dict:
+    """
+    v4.0 退货资格审核节点
+    
+    根据退款金额判断是否需要人工审核
+    """
+
+    print(" [Audit] 检查退货资格...")
+    
+    # 从状态中获取退款申请信息
+    refund_data = state.get("refund_data")
+    if not refund_data: 
+        # 没有退款数据，可能是其他流程，直接返回
+        return {
+            "audit_required": False,
+            "answer": state.get("answer", "")
+        }
+    
+    refund_amount = refund_data.get("amount", 0)
+    refund_id = refund_data.get("refund_id")
+    
+    print(f" [Audit] 退款金额: ¥{refund_amount}")
+    
+    # 判断风险等级
+    if refund_amount >= settings.HIGH_RISK_REFUND_AMOUNT:
+        risk_level = RiskLevel.HIGH
+        trigger_reason = f"高额退款申请：¥{refund_amount} (≥ ¥{settings.HIGH_RISK_REFUND_AMOUNT})"
+        needs_audit = True
+    elif refund_amount >= settings.MEDIUM_RISK_REFUND_AMOUNT:
+        risk_level = RiskLevel.MEDIUM
+        trigger_reason = f"中额退款申请：¥{refund_amount} (≥ ¥{settings.MEDIUM_RISK_REFUND_AMOUNT})"
+        needs_audit = True
+    else: 
+        # 低风险，自动通过
+        print(f" [Audit] 低风险退款，自动通过")
+        
+        # 更新退款状态为已批准
+        async with async_session_maker() as session:
+            refund = await session.get(RefundApplication, refund_id)
+            if refund: 
+                refund.status = RefundStatus.APPROVED
+                refund.reviewed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                session.add(refund)
+                await session.commit()
+        
+        return {
+            "audit_required":  False,
+            "answer": f" 您的退货申请已自动审核通过！\n\n 申请编号:  {refund_id}\n 退款金额: ¥{refund_amount}\n\n资金将在 3-5 个工作日内原路退回，请注意查收。"
+        }
+    
+    if not needs_audit:
+        return {
+            "audit_required": False,
+            "answer": state.get("answer", "")
+        }
+    
+    # 创建审计日志
+    async with async_session_maker() as session:
+        audit_log = AuditLog(
+            thread_id=state["thread_id"],
+            user_id=state["user_id"],
+            order_id=refund_data.get("order_id"),
+            refund_application_id=refund_id,
+            trigger_reason=trigger_reason,
+            risk_level=risk_level,
+            action=AuditAction.PENDING,
+            context_snapshot={
+                "question": state["question"],
+                "refund_data": refund_data,
+                "order_data": state.get("order_data"),
+                "history": state.get("history", []),
+            }
+        )
+        session.add(audit_log)
+        await session.commit()
+        await session.refresh(audit_log)
+        
+        audit_log_id = audit_log.id
+        print(f" [Audit] 审计日志已创建: ID={audit_log_id}")
+    
+    # 触发管理员通知异步任务
+    try:
+        notify_admin_audit.delay(audit_log_id)
+        print(f" [Audit] 已发送管理员通知任务")
+    except Exception as e: 
+        print(f" [Audit] 发送通知失败: {e}")
+    
+    # 通过 WebSocket 实时通知用户
+    try:
+        await manager.notify_status_change(
+            thread_id=state["thread_id"],
+            status="WAITING_ADMIN",
+            data={
+                "risk_level": risk_level,
+                "trigger_reason": trigger_reason,
+                "audit_log_id": audit_log_id,
+                "refund_amount":  refund_amount,
+            }
+        )
+        print(f" [Audit] WebSocket 通知已发送")
+    except Exception as e:
+        print(f" [Audit] WebSocket 通知失败: {e}")
+    
+    print(f" [Audit] 需要人工审核 - {risk_level} - {trigger_reason}")
+    
+    return {
+        "audit_required": True,
+        "audit_log_id": audit_log_id,
+        "answer":  f" 您的退货申请需要人工审核\n\n 申请编号: {refund_id}\n 退款金额: ¥{refund_amount}\n 风险等级: {risk_level}\n 触发原因: {trigger_reason}\n\n我们将在 24 小时内完成审核，请耐心等待。您可以关闭页面，稍后返回查看结果。"
     }
-    
-    # 调用子图
-    result = await refund_subgraph.ainvoke(subgraph_state)
-    
-    # 提取子图返回的结果
-    response = result.get("response", "退货流程处理中...")
-    needs_input = result.get("needs_user_input", False)
-    
-    print(f" [Refund] 子图执行完成")
-    print(f" 需要用户输入: {needs_input}")
-    
-    # 如果需要用户输入，标记退货流程为活跃状态
-    if needs_input: 
-        return {
-            "answer": response,
-            "refund_flow_active": True,
-            "refund_order_sn": result.get("order_sn"),
-            "refund_step": result.get("current_step")
-        }
-    else:
-        # 流程结束，直接返回最终结果
-        return {
-            "answer": response,
-            "refund_flow_active":  False
-        }

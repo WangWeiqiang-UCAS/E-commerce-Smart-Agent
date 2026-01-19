@@ -60,4 +60,41 @@ class Settings(BaseSettings):
         extra="ignore" # 忽略多余的环境变量
     )
 
+    # Celery 配置
+    CELERY_BROKER_URL: str = ""  # 默认使用 REDIS_URL
+    CELERY_RESULT_BACKEND: str = ""  # 默认使用 REDIS_URL
+    
+    @computed_field
+    @property
+    def CELERY_BROKER(self) -> str:
+        """Celery Broker URL"""
+        return self.CELERY_BROKER_URL or self.REDIS_URL
+    
+    @computed_field
+    @property
+    def CELERY_BACKEND(self) -> str:
+        """Celery Result Backend URL"""
+        return self.CELERY_RESULT_BACKEND or self.REDIS_URL
+    
+    # 风控阈值配置
+    HIGH_RISK_REFUND_AMOUNT: float = 2000.0  # 高风险退款金额阈值
+    MEDIUM_RISK_REFUND_AMOUNT: float = 500.0  # 中风险退款金额阈值
+    
+    # WebSocket 配置
+    WEBSOCKET_HEARTBEAT_INTERVAL: int = 30  # 心跳间隔（秒）
+    WEBSOCKET_RECONNECT_TIMEOUT: int = 60  # 重连超时（秒）
+    
+    # 轮询配置
+    STATUS_POLLING_INTERVAL: int = 3  # 状态轮询间隔（秒）
+    
+    # 安全配置
+    SECRET_KEY: str 
+    ALGORITHM: str 
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
+
+    model_config = SettingsConfigDict(
+        env_file=".env", 
+        extra="ignore"
+    )
+
 settings = Settings()
