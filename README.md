@@ -18,6 +18,8 @@ E-commerce Smart Agent v4.0 是一个先进的全栈智能客服系统，旨在�
 
 ## 🏗️ 项目结构
 
+```text
+
 ├── README.md
 ├── app # 主应用目录
 │ ├── init.py
@@ -78,6 +80,7 @@ E-commerce Smart Agent v4.0 是一个先进的全栈智能客服系统，旨在�
 ├── start.sh # 项目启动脚本
 └── start_worker.sh # Celery Worker 启动脚本
 
+```
 
 ## 🛠️ 技术栈
 
@@ -94,19 +97,17 @@ E-commerce Smart Agent v4.0 是一个先进的全栈智能客服系统，旨在�
 *   **Docker / Docker Compose**：容器化部署工具。
 *   **Alembic**：数据库迁移工具。
 
-## 🛠️ 功能演示
 ### 订单查询
-<img src="./assets/images/订单查询.png" width="600" alt="订单查询" />
+<img src="assets/images/order_query.png" width="600" alt="订单查询" />
 
 ### 退货申请
-<img src="./assets/images/退货申请.png" width="600" alt="订单查询" />
+<img src="assets/images/refund_apply.png" width="600" alt="退货申请" />
 
 ### 政策咨询
-<img src="./assets/images/政策咨询.png" width="600" alt="订单查询" />
+<img src="assets/images/policy_ask.png" width="600" alt="政策咨询" />
 
 ### 意图识别
-<img src="./assets/images/意图识别.png" width="600" alt="订单查询" />
+<img src="assets/images/intent_detect.png" width="600" alt="意图识别" />
 
 ### 非法查询他人订单
-<img src="./assets/images/非法查询他人订单.png" width="600" alt="订单查询" />
-
+<img src="assets/images/illegal_query.png" width="600" alt="非法查询" />
