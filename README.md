@@ -98,16 +98,16 @@ E-commerce Smart Agent v4.0 是一个先进的全栈智能客服系统，旨在�
 *   **Alembic**：数据库迁移工具。
 
 ### 订单查询
-<img src="assets/images/order_query.png" width="600" alt="订单查询" />
+<img src="assets/image/order_query.png" width="600" alt="订单查询" />
 
 ### 退货申请
-<img src="assets/images/refund_apply.png" width="600" alt="退货申请" />
+<img src="assets/image/refund_apply.png" width="600" alt="退货申请" />
 
 ### 政策咨询
-<img src="assets/images/policy_ask.png" width="600" alt="政策咨询" />
+<img src="assets/image/policy_ask.png" width="600" alt="政策咨询" />
 
 ### 意图识别
-<img src="assets/images/intent_detect.png" width="600" alt="意图识别" />
+<img src="assets/image/intent_detect.png" width="600" alt="意图识别" />
 
 ### 非法查询他人订单
-<img src="assets/images/illegal_query.png" width="600" alt="非法查询" />
+<img src="assets/image/illegal_query.png" width="600" alt="非法查询" />
