@@ -73,49 +73,6 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
         )
 
 
-async def get_current_user_id_ws(token: str) -> int:
-    """
-    WebSocket Token 验证 (异步版本)
-    
-    Args:
-        token: JWT Token 字符串
-    
-    Returns:
-        user_id: 用户ID
-    
-    Raises:
-        HTTPException: Token 无效时抛出
-    """
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing authentication token"
-        )
-    
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
-        
-        if user_id is None: 
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: missing user ID"
-            )
-        
-        return int(user_id)
-    
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired"
-        )
-    except jwt.InvalidTokenError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
-
-
 def get_admin_user_id(token: str = Depends(oauth2_scheme)) -> int:
     """
     管理员认证依赖项
@@ -161,19 +118,3 @@ def get_admin_user_id(token: str = Depends(oauth2_scheme)) -> int:
             detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-
-async def get_current_admin_id_ws(token: str) -> int:
-    """Validate an administrator JWT for a WebSocket connection."""
-    if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authentication token")
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("sub")
-        if user_id is None or not payload.get("is_admin", False):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
-        return int(user_id)
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")

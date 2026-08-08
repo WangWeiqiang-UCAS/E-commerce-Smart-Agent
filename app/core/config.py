@@ -63,17 +63,6 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60
 
-    # 风控阈值配置
-    HIGH_RISK_REFUND_AMOUNT: float = 2000.0  # 高风险退款金额阈值
-    MEDIUM_RISK_REFUND_AMOUNT: float = 500.0  # 中风险退款金额阈值
-    
-    # WebSocket 配置
-    WEBSOCKET_HEARTBEAT_INTERVAL: int = 30  # 心跳间隔（秒）
-    WEBSOCKET_RECONNECT_TIMEOUT: int = 60  # 重连超时（秒）
-    
-    # 轮询配置
-    STATUS_POLLING_INTERVAL: int = 3  # 状态轮询间隔（秒）
-    
     # Security configuration. Generate a unique secret for every deployed environment.
     SECRET_KEY: str 
     ALGORITHM: str = "HS256"

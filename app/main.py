@@ -2,8 +2,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.chat import router as chat_router
-from app.api.v1.status import router as status_router
-from app.api.v1.websocket import router as websocket_router
 from app.api.v1.auth import router as auth_router  # v4.0 新增
 from app.core.config import settings
 from app.core.tracing import TraceIdMiddleware
@@ -31,8 +29,6 @@ app.add_middleware(TraceIdMiddleware)
 # 2. 注册路由
 app.include_router(auth_router, prefix=settings.API_V1_STR, tags=["Auth"])  # v4.0 新增
 app.include_router(chat_router, prefix=settings.API_V1_STR, tags=["Chat"])
-app.include_router(status_router, prefix=settings.API_V1_STR, tags=["Status"])
-app.include_router(websocket_router, prefix=settings.API_V1_STR, tags=["WebSocket"])
 app.include_router(admin_router, prefix=settings.API_V1_STR, tags=["Admin"])
 
 

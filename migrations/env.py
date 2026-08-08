@@ -12,7 +12,6 @@ from app.core.config import settings
 from sqlmodel import SQLModel
 # 导入所有模型以确保被注册
 from app.models.knowledge import KnowledgeChunk 
-from app.models.audit import AuditLog
 from app.models.message import MessageCard
 from app.models.user import User
 from app.models.inbox import InboxEvent
