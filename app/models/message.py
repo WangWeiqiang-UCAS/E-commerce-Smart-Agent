@@ -6,8 +6,9 @@ v4.0 新增：结构化消息模型
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, Dict, Any
-from sqlalchemy import Column, String, text, JSON, Text
+from sqlalchemy import Column, String, text, JSON
 from sqlmodel import SQLModel, Field
+from pydantic import ConfigDict
 
 
 class MessageType(str, Enum):
@@ -78,5 +79,4 @@ class MessageCard(SQLModel, table=True):
         }
     )
     
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)

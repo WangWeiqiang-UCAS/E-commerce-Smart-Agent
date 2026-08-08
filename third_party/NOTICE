@@ -1,0 +1,11 @@
+E-commerce Smart Agent
+Copyright (c) 2026
+
+This product includes software developed by the macrozheng/mall project
+(https://github.com/macrozheng/mall), licensed under the Apache License 2.0.
+See apps/commerce-java/LICENSE and third_party/UPSTREAMS.md for the imported
+revision and modification notes.
+
+Other third-party components are listed in third_party/SBOM together with their
+licenses. Nothing in this file grants additional rights beyond the respective
+component licenses.

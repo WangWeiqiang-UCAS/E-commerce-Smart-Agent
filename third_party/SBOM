@@ -1,0 +1,46 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "E-commerce Smart Agent",
+      "version": "4.0.0"
+    },
+    "timestamp": "2026-08-08T00:00:00Z"
+  },
+  "components": [
+    { "type": "library", "name": "macrozheng/mall", "version": "0504e86b", "licenses": [{ "license": { "id": "Apache-2.0" } }] },
+    { "type": "library", "name": "spring-boot", "version": "3.5.14", "licenses": [{ "license": { "id": "Apache-2.0" } }] },
+    { "type": "library", "name": "fastapi", "version": "0.128.0", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "uvicorn", "version": "0.40.0", "licenses": [{ "license": { "id": "BSD-3-Clause" } }] },
+    { "type": "library", "name": "langgraph", "version": "1.0.5", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "langchain", "version": "1.2.3", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "langchain-openai", "version": "1.1.7", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "langgraph-checkpoint-redis", "version": "0.3.2", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "sqlmodel", "version": "0.0.31", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "sqlalchemy", "version": "2.0.45", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "asyncpg", "version": "0.31.0", "licenses": [{ "license": { "id": "Apache-2.0" } }] },
+    { "type": "library", "name": "pgvector", "version": "0.4.2", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "redis-py", "version": "7.1.0", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "kombu", "version": "5.6.2", "licenses": [{ "license": { "id": "BSD-3-Clause" } }] },
+    { "type": "library", "name": "httpx", "version": "0.28.1", "licenses": [{ "license": { "id": "BSD-3-Clause" } }] },
+    { "type": "library", "name": "pydantic", "version": "2.12.5", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "alembic", "version": "1.18.0", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "pyjwt", "version": "2.10.1", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "passlib", "version": "1.7.4", "licenses": [{ "license": { "id": "BSD-3-Clause" } }] },
+    { "type": "library", "name": "bcrypt", "version": "3.2.2", "licenses": [{ "license": { "id": "Apache-2.0" } }] },
+    { "type": "library", "name": "pypdf", "version": "6.6.0", "licenses": [{ "license": { "id": "BSD-3-Clause" } }] },
+    { "type": "library", "name": "tenacity", "version": "9.1.2", "licenses": [{ "license": { "id": "Apache-2.0" } }] },
+    { "type": "library", "name": "websockets", "version": "14.2", "licenses": [{ "license": { "id": "BSD-3-Clause" } }] },
+    { "type": "library", "name": "pytest", "version": "9.0.2", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "next", "version": "16.3.0", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "react", "version": "19.2.3", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "zod", "version": "3.24.1", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "typescript", "version": "5.9.2", "licenses": [{ "license": { "id": "Apache-2.0" } }] },
+    { "type": "library", "name": "opentelemetry-collector", "version": "0.115.1", "licenses": [{ "license": { "id": "Apache-2.0" } }] },
+    { "type": "library", "name": "prometheus", "version": "2.55.1", "licenses": [{ "license": { "id": "Apache-2.0" } }] },
+    { "type": "library", "name": "grafana", "version": "11.3.1", "licenses": [{ "license": { "id": "AGPL-3.0" } }] }
+  ]
+}

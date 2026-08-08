@@ -1,5 +1,6 @@
 # scripts/etl_policy_v2.py
 import asyncio
+import argparse
 import os
 import sys
 import glob  # 引入 glob 用于批量查找文件
@@ -21,6 +22,9 @@ from app.models.knowledge import KnowledgeChunk
 BATCH_SIZE = 50  # 每次向 Embedding API 发送的片段数量（防止 API 超时）
 DB_BATCH_SIZE = 100 # 每次向数据库写入的条数
 # =========================================
+
+POLICY_VERSION = os.getenv("POLICY_VERSION", "dev")
+POLICY_DOCUMENT_ID = os.getenv("POLICY_DOCUMENT_ID", "")
 
 embeddings_model = OpenAIEmbeddings(
     base_url=settings.OPENAI_BASE_URL,
@@ -44,8 +48,10 @@ async def embed_with_retry(texts):
     """带重试机制的 Embedding 调用，防止网络抖动"""
     return await embeddings_model.aembed_documents(texts)
 
-async def process_file(file_path: str, source_name: str):
+async def process_file(file_path: str, source_name: str, version: str = "", document_id: str = ""):
     print(f"🚀 [Start] 处理文件: {source_name}")
+    document_id = document_id or POLICY_DOCUMENT_ID or os.path.splitext(source_name)[0]
+    version = version or POLICY_VERSION
     
     try:
         # --- Step 1: 加载 ---
@@ -69,8 +75,9 @@ async def process_file(file_path: str, source_name: str):
 
         async with async_session_maker() as session:
             # --- Step 3.1: 幂等清理 ---
-            # 只有在第一批次时才清理，或者一次性清理
-            print(f"  broom 清理旧数据...")
+            # 同一 source 视为同一知识文档，重跑时先清理旧片段。
+            # 新片段写入 document_id/version 元数据，回答引用携带版本号。
+            print(f"  broom 清理旧数据 (document_id={document_id}, version={version})...")
             await session.execute(delete(KnowledgeChunk).where(KnowledgeChunk.source == source_name))
             await session.commit() # 立即提交删除
 
@@ -114,7 +121,7 @@ async def process_file(file_path: str, source_name: str):
                         content=text,
                         embedding=vectors[j],
                         source=source_name,
-                        meta_data=batch_metas[j]
+                        meta_data={**batch_metas[j], "document_id": document_id, "version": version}
                     )
                     new_chunks.append(chunk)
                 
@@ -129,6 +136,11 @@ async def process_file(file_path: str, source_name: str):
         # 生产环境中这里应该记录到 error.log，而不是仅仅 print
 
 async def main():
+    parser = argparse.ArgumentParser(description="Versioned policy knowledge ETL")
+    parser.add_argument("--version", default=POLICY_VERSION, help="Document version stored in chunk metadata")
+    parser.add_argument("--document-id", default=POLICY_DOCUMENT_ID, help="Stable document id (default: file name)")
+    args = parser.parse_args()
+
     # 1. 自动扫描 data 目录下的所有 PDF 和 MD 文件
     # 假设你的文件都在项目根目录的 data 文件夹下
     base_dir = "data"
@@ -144,7 +156,7 @@ async def main():
         # 自动生成 source_name，例如 "data/policy.pdf" -> "policy.pdf"
         source_name = os.path.basename(file_path)
         
-        await process_file(file_path, source_name)
+        await process_file(file_path, source_name, version=args.version, document_id=args.document_id)
 
 if __name__ == "__main__":
     # Windows 下如果报错 EventLoop 相关问题，可以解开下面这行的注释

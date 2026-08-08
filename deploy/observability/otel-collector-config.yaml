@@ -1,0 +1,33 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+processors:
+  batch:
+
+exporters:
+  otlp/langfuse:
+    endpoint: ${OTLP_ENDPOINT}
+    tls:
+      insecure: ${OTLP_INSECURE:-true}
+    headers:
+      Authorization: Bearer ${LANGFUSE_PUBLIC_KEY}:${LANGFUSE_SECRET_KEY}
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/langfuse, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

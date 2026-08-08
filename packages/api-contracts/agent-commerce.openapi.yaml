@@ -1,0 +1,325 @@
+openapi: 3.1.0
+info:
+  title: Agent Commerce API
+  version: 0.1.0
+  description: Anti-corruption API between the agent runtime and commerce system.
+servers:
+  - url: https://commerce.example.internal
+paths:
+  /agent/commerce/products/search:
+    get:
+      operationId: searchProducts
+      summary: Search published products using bounded public filters
+      parameters:
+        - name: query
+          in: query
+          schema: { type: string, maxLength: 200 }
+        - name: brandId
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: categoryId
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: pageNum
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 20 }
+        - name: sort
+          in: query
+          schema: { type: integer, enum: [0, 1, 2, 3, 4] }
+      responses:
+        '200':
+          description: Product summaries
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommonResultProductList' }
+  /agent/commerce/products/{productId}:
+    get:
+      operationId: getProductDetail
+      summary: Get current product and SKU stock projection
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Product detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommonResultProductDetail' }
+        '404': { description: Product not found }
+  /agent/commerce/orders:
+    get:
+      operationId: getUserOrders
+      summary: List orders for the authenticated customer
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Orders
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommonResultOrderPage' }
+  /agent/commerce/orders/{orderId}:
+    get:
+      operationId: getOrderDetail
+      summary: Get an order owned by the authenticated customer
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommonResultOrder' }
+        '404': { description: Not found or not owned by the customer }
+  /agent/commerce/orders/{orderId}/logistics:
+    get:
+      operationId: getOrderLogistics
+      summary: Get a non-PII logistics projection for an owned order
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Logistics status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommonResultLogistics' }
+        '404': { description: Not found or not owned by the customer }
+  /agent/commerce/after-sales/{afterSaleId}:
+    get:
+      operationId: getAfterSaleStatus
+      summary: Get status for an after-sales application whose underlying order is owned by the customer
+      parameters:
+        - name: afterSaleId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: After-sales status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommonResultAfterSaleStatus' }
+        '404': { description: Not found or not owned by the customer }
+  /agent/commerce/actions/refund/preview:
+    post:
+      operationId: previewRefund
+      summary: Calculate a refundable amount without changing commerce state
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefundPreviewRequest' }
+      responses:
+        '200':
+          description: Preview requiring explicit customer confirmation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommonResultRefundPreview' }
+  /agent/commerce/actions/refund/confirm:
+    post:
+      operationId: confirmRefund
+      summary: Create an after-sales request from a confirmed preview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefundConfirmRequest' }
+      responses:
+        '200':
+          description: After-sales request created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommonResultRefundConfirm' }
+components:
+  schemas:
+    CommonResultOrderPage:
+      type: object
+      required: [code, data]
+      properties:
+        code: { type: integer, enum: [200] }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/OrderPage' }
+    CommonResultProductList:
+      type: object
+      required: [code, data]
+      properties:
+        code: { type: integer, enum: [200] }
+        message: { type: string }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ProductSummary' }
+    CommonResultProductDetail:
+      type: object
+      required: [code, data]
+      properties:
+        code: { type: integer, enum: [200] }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/ProductDetail' }
+    CommonResultOrder:
+      type: object
+      required: [code, data]
+      properties:
+        code: { type: integer, enum: [200] }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/Order' }
+    CommonResultRefundPreview:
+      type: object
+      required: [code, data]
+      properties:
+        code: { type: integer, enum: [200] }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/RefundPreview' }
+    CommonResultRefundConfirm:
+      type: object
+      required: [code, data]
+      properties:
+        code: { type: integer, enum: [200] }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/RefundConfirmResponse' }
+    CommonResultLogistics:
+      type: object
+      required: [code, data]
+      properties:
+        code: { type: integer, enum: [200] }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/Logistics' }
+    CommonResultAfterSaleStatus:
+      type: object
+      required: [code, data]
+      properties:
+        code: { type: integer, enum: [200] }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/AfterSaleStatus' }
+    OrderPage:
+      type: object
+      required: [list, total, totalPage, pageNum, pageSize]
+      properties:
+        list:
+          type: array
+          items: { $ref: '#/components/schemas/Order' }
+        total: { type: integer, format: int64 }
+        totalPage: { type: integer }
+        pageNum: { type: integer }
+        pageSize: { type: integer }
+    Order:
+      type: object
+      required: [id, orderSn, status, orderItemList]
+      properties:
+        id: { type: integer, format: int64 }
+        orderSn: { type: string }
+        status: { type: integer }
+        payAmount: { type: number }
+        deliverySn: { type: string }
+        orderItemList:
+          type: array
+          items:
+            type: object
+            required: [id, productId, productQuantity]
+            properties:
+              id: { type: integer, format: int64 }
+              productId: { type: integer, format: int64 }
+              productName: { type: string }
+              productQuantity: { type: integer, minimum: 1 }
+    ProductSummary:
+      type: object
+      required: [id, name, price, stock]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        productSn: { type: string }
+        pic: { type: string }
+        price: { type: number }
+        promotionPrice: { type: number }
+        stock: { type: integer, minimum: 0 }
+        brandName: { type: string }
+        categoryName: { type: string }
+        description: { type: string }
+    ProductDetail:
+      type: object
+      required: [product, skus]
+      properties:
+        product: { $ref: '#/components/schemas/ProductSummary' }
+        skus:
+          type: array
+          items:
+            type: object
+            required: [id, skuCode, price, stock]
+            properties:
+              id: { type: integer, format: int64 }
+              skuCode: { type: string }
+              price: { type: number }
+              promotionPrice: { type: number }
+              stock: { type: integer, minimum: 0 }
+              pic: { type: string }
+              attributes: { type: string }
+    RefundPreviewRequest:
+      type: object
+      required: [orderId, productId, quantity, reason, agentTraceId]
+      properties:
+        orderId: { type: integer, format: int64 }
+        productId: { type: integer, format: int64 }
+        quantity: { type: integer, minimum: 1, maximum: 999 }
+        reason: { type: string, maxLength: 500 }
+        agentTraceId: { type: string }
+    RefundPreview:
+      type: object
+      required: [actionToken, previewHash, expiresAt, amount]
+      properties:
+        actionToken: { type: string }
+        previewHash: { type: string }
+        expiresAt: { type: string, format: date-time }
+        amount: { type: string, pattern: '^\\d+\\.\\d{2}$' }
+    RefundConfirmRequest:
+      type: object
+      required: [actionToken, idempotencyKey, previewHash, agentTraceId, confirmedAt]
+      properties:
+        actionToken: { type: string }
+        idempotencyKey: { type: string, format: uuid }
+        previewHash: { type: string }
+        agentTraceId: { type: string }
+        confirmedAt: { type: string, format: date-time }
+    RefundConfirmResponse:
+      type: object
+      required: [actionId, afterSaleId, status]
+      properties:
+        actionId: { type: integer, format: int64 }
+        afterSaleId: { type: integer, format: int64 }
+        status: { type: string, enum: [APPLICATION_CREATED] }
+    Logistics:
+      type: object
+      required: [orderId, orderStatus]
+      properties:
+        orderId: { type: integer, format: int64 }
+        orderStatus: { type: integer }
+        deliveryCompany: { type: string }
+        deliverySn: { type: string }
+        deliveryTime: { type: string, format: date-time }
+        receiveTime: { type: string, format: date-time }
+    AfterSaleStatus:
+      type: object
+      required: [afterSaleId, orderId, status, createdAt]
+      properties:
+        afterSaleId: { type: integer, format: int64 }
+        orderId: { type: integer, format: int64 }
+        orderSn: { type: string }
+        productId: { type: integer, format: int64 }
+        status: { type: integer, description: '0 pending, 1 returning, 2 completed, 3 rejected' }
+        returnAmount: { type: number }
+        createdAt: { type: string, format: date-time }
+        handledAt: { type: string, format: date-time }

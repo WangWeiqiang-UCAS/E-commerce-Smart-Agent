@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Optional, Dict, Any
 from sqlalchemy import Column, String, text, JSON, Text
 from sqlmodel import SQLModel, Field
+from pydantic import ConfigDict
 
 
 class RiskLevel(str, Enum):
@@ -101,5 +102,4 @@ class AuditLog(SQLModel, table=True):
         }
     )
     
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)

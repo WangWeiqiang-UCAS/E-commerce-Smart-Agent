@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # 核心数据库：PostgreSQL + pgvector
   db:
@@ -34,21 +32,76 @@ services:
       timeout: 5s
       retries: 5
 
-  # v4.0 新增:  Celery Worker
-  celery_worker: 
+  migrate:
     build: .
-    container_name: ecommerce_celery_worker
-    command: celery -A app.celery_app worker --loglevel=info --concurrency=4 -E
+    command: alembic upgrade head
+    env_file:
+      - path: .env
+        required: false
     depends_on:
-      postgres: 
+      db:
         condition: service_healthy
+    restart: "no"
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: ecommerce_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mall-mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: mall
+    ports:
+      - "3306:3306"
+    volumes:
+      - mall_mysql_data:/var/lib/mysql
+      - ./apps/commerce-java/document/sql/mall.sql:/docker-entrypoint-initdb.d/01-mall.sql:ro
+      - ./apps/commerce-java/document/sql/migrations/V20260808_01__agent_refund_actions.sql:/docker-entrypoint-initdb.d/20-agent-refund-actions.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  mall-mongo:
+    image: mongo:7
+    volumes:
+      - mall_mongo_data:/data/db
+
+  commerce_java:
+    build: ./apps/commerce-java
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_PROFILES_ACTIVE: compose
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+    depends_on:
+      mall-mysql:
+        condition: service_healthy
+      mall-mongo:
+        condition: service_started
       redis:
         condition: service_healthy
-    env_file:
-      - .env
-    volumes:
-      - ./app:/app/app
-    restart: unless-stopped
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8085/actuator/health | grep -q 'UP'"]
+      interval: 20s
+      timeout: 5s
+      retries: 15
 
   # FastAPI 应用
   app:
@@ -58,18 +111,81 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      postgres:
+      db:
         condition: service_healthy
       redis:
         condition:  service_healthy
-      celery_worker:
-        condition: service_started
+      migrate:
+        condition: service_completed_successfully
     env_file:
-      - .env
+      - path: .env
+        required: false
     volumes:
       - ./app:/app/app
     restart: unless-stopped
 
+  commerce_event_consumer:
+    build: .
+    container_name: ecommerce_commerce_event_consumer
+    command: python scripts/consume_commerce_events.py
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-guest}:${RABBITMQ_DEFAULT_PASS:-guest}@rabbitmq:5672//
+    restart: unless-stopped
+
+  agent_bff:
+    build: ./apps/agent-bff-ts
+    ports:
+      - "3000:3000"
+    environment:
+      AGENT_RUNTIME_URL: http://app:8000
+      COMMERCE_API_URL: http://commerce_java:8085
+      PUBLIC_APP_ORIGIN: http://localhost:3000
+      AGENT_SESSION_COOKIE: agent_access_token
+      COMMERCE_SESSION_COOKIE: commerce_access_token
+      SESSION_COOKIE_SECURE: "false"
+      BFF_TO_AGENT_SHARED_SECRET: ${BFF_SHARED_SECRET:?Set BFF_SHARED_SECRET in .env before starting Compose}
+    depends_on:
+      app:
+        condition: service_started
+      commerce_java:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  agent_desk:
+    build: ./apps/agent-desk-ts
+    ports:
+      - "3001:3000"
+    environment:
+      AGENT_RUNTIME_URL: http://app:8000
+      PUBLIC_APP_ORIGIN: http://localhost:3001
+      ADMIN_SESSION_COOKIE: desk_admin_token
+      BFF_TO_AGENT_SHARED_SECRET: ${BFF_SHARED_SECRET:?Set BFF_SHARED_SECRET in .env before starting Compose}
+      SESSION_COOKIE_SECURE: "false"
+    depends_on:
+      app:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/tasks').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data: 
   redis_data:
+  mall_mysql_data:
+  mall_mongo_data:

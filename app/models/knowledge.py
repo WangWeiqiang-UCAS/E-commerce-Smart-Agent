@@ -4,7 +4,6 @@ from typing import Optional, List, Dict, Any
 from sqlmodel import SQLModel, Field, Column, JSON
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Index, text
-from pydantic import ConfigDict
 
 # 引入配置
 from app.core.config import settings 

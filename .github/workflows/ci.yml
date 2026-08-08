@@ -1,0 +1,83 @@
+name: Prototype checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install poetry==2.2.1
+      - run: poetry install --with dev --no-interaction
+      - run: python -m compileall -q app
+      - run: python -m compileall -q scripts test migrations
+      - run: poetry run pytest -q
+
+  commerce-java:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/commerce-java
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      # Agent boundary unit tests run without infrastructure. Full
+      # context/Testcontainers suites run against the local Compose stack.
+      - run: mvn -pl mall-portal -am test -Dtest=AgentCommerceControllerTest -Dsurefire.failIfNoSpecifiedTests=false -DskipTests=false
+
+  agent-bff:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/agent-bff-ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/agent-bff-ts/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+
+  customer-widget:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/customer-widget-ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/customer-widget-ts/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+
+  agent-desk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/agent-desk-ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/agent-desk-ts/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high

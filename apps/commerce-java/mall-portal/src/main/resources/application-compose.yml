@@ -1,0 +1,20 @@
+spring:
+  datasource:
+    url: jdbc:mysql://mall-mysql:3306/mall?useUnicode=true&characterEncoding=utf-8&serverTimezone=UTC&useSSL=false
+    username: root
+    password: root
+  data:
+    mongodb:
+      host: mall-mongo
+      port: 27017
+      database: mall-port
+    redis:
+      host: redis
+      port: 6379
+      database: 0
+  rabbitmq:
+    host: rabbitmq
+    port: 5672
+    virtual-host: /
+    username: ${RABBITMQ_DEFAULT_USER:guest}
+    password: ${RABBITMQ_DEFAULT_PASS:guest}

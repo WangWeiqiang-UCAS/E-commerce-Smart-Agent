@@ -5,7 +5,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
-from app.core.security import create_access_token, get_current_user_id
+from app.core.security import create_access_token, get_current_user_id, require_bff_secret
 from app.core.database import async_session_maker
 from app.models.user import User
 from sqlmodel import select
@@ -50,7 +50,7 @@ class UserInfoResponse(BaseModel):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(request: LoginRequest):
+async def login(request: LoginRequest, _: None = Depends(require_bff_secret)):
     """
     用户登录
     
@@ -99,7 +99,7 @@ async def login(request: LoginRequest):
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register(request:  RegisterRequest):
+async def register(request:  RegisterRequest, _: None = Depends(require_bff_secret)):
     """
     用户注册
     
@@ -158,8 +158,6 @@ async def get_current_user_info(current_user_id: int = Depends(get_current_user_
     """
     获取当前登录用户信息
     """
-    from app.core.security import get_current_user_id
-    
     async with async_session_maker() as session:
         user = await session.get(User, current_user_id)
         

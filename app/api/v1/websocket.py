@@ -2,8 +2,8 @@
 """
 WebSocket 路由
 """
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query
-from app.core.security import get_current_user_id
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from app.core.security import get_current_user_id_ws, get_current_admin_id_ws
 from app.websocket.manager import manager
 
 router = APIRouter()
@@ -23,7 +23,7 @@ async def websocket_endpoint(
     """
     try:
         # 验证 Token
-        user_id = await get_current_user_id(token)
+        user_id = await get_current_user_id_ws(token)
         
         # 建立连接
         await manager.connect_user(websocket, user_id, thread_id)
@@ -58,8 +58,9 @@ async def admin_websocket_endpoint(
         token: JWT Token (需验证管理员权限)
     """
     try:
-        # TODO: 验证管理员权限
-        # admin_user = await verify_admin_token(token)
+        authenticated_admin_id = await get_current_admin_id_ws(token)
+        if authenticated_admin_id != admin_id:
+            raise RuntimeError("Administrator identity does not match the requested channel")
         
         # 建立连接
         await manager.connect_admin(websocket, admin_id)

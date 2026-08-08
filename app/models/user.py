@@ -3,9 +3,10 @@
 用户模型 - 支持真实登录认证
 """
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional
 from sqlalchemy import text
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import SQLModel, Field
+from pydantic import ConfigDict
 from passlib.context import CryptContext
 
 # 密码加密上下文
@@ -48,8 +49,6 @@ class User(SQLModel, table=True):
     )
     
     # 关系
-    orders: List["Order"] = Relationship(back_populates="user")
-    
     @staticmethod
     def hash_password(password: str) -> str:
         """密码加密"""
@@ -59,11 +58,10 @@ class User(SQLModel, table=True):
         """验证密码"""
         return pwd_context.verify(password, self.password_hash)
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(json_schema_extra={
             "example": {
                 "username": "alice",
                 "email": "alice@example.com",
                 "full_name": "Alice Wang"
             }
-        }
+        })

@@ -1,6 +1,7 @@
 # app/core/config.py
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import PostgresDsn, RedisDsn, computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict, NoDecode
+from pydantic import PostgresDsn, RedisDsn, computed_field, field_validator
+from typing import Annotated, List
 
 class Settings(BaseSettings):
     PROJECT_NAME: str
@@ -45,37 +46,23 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "qwen-plus"
     EMBEDDING_MODEL: str = "text-embedding-v3"
     EMBEDDING_DIM: int = 1024
-    model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True)
+    # Java commerce anti-corruption API. This service never connects to its database.
+    COMMERCE_API_BASE_URL: str = ""
+    COMMERCE_API_TIMEOUT_SECONDS: float = 8.0
+    # LLM call budget. Failures should degrade to order cards, FAQ search, or
+    # handoff rather than blocking the commerce checkout path.
+    LLM_TIMEOUT_SECONDS: float = 60.0
+    # RabbitMQ domain-event inbox. Empty disables the standalone consumer.
+    RABBITMQ_URL: str = ""
+    COMMERCE_EVENT_QUEUE: str = "agent.runtime.events"
+    # Shared only with the BFF; when set, direct browser access to Agent APIs is rejected.
+    BFF_SHARED_SECRET: str = ""
+    # Comma-separated explicit origins. Wildcards cannot be used with credentials.
+    CORS_ORIGINS: Annotated[List[str], NoDecode] = ["http://localhost:3000"]
+    # Per-user fixed-window rate limit on Agent chat endpoints.
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_PER_MINUTE: int = 60
 
-    # === 安全配置 ===
-    # 建议生产环境使用: openssl rand -hex 32 生成
-    SECRET_KEY: str 
-    ALGORITHM: str 
-    # Token 有效期（分钟），默认 1 天
-    ACCESS_TOKEN_EXPIRE_MINUTES: int
-
-    # 允许 Pydantic 读取 .env 文件
-    model_config = SettingsConfigDict(
-        env_file=".env", 
-        extra="ignore" # 忽略多余的环境变量
-    )
-
-    # Celery 配置
-    CELERY_BROKER_URL: str = ""  # 默认使用 REDIS_URL
-    CELERY_RESULT_BACKEND: str = ""  # 默认使用 REDIS_URL
-    
-    @computed_field
-    @property
-    def CELERY_BROKER(self) -> str:
-        """Celery Broker URL"""
-        return self.CELERY_BROKER_URL or self.REDIS_URL
-    
-    @computed_field
-    @property
-    def CELERY_BACKEND(self) -> str:
-        """Celery Result Backend URL"""
-        return self.CELERY_RESULT_BACKEND or self.REDIS_URL
-    
     # 风控阈值配置
     HIGH_RISK_REFUND_AMOUNT: float = 2000.0  # 高风险退款金额阈值
     MEDIUM_RISK_REFUND_AMOUNT: float = 500.0  # 中风险退款金额阈值
@@ -87,10 +74,17 @@ class Settings(BaseSettings):
     # 轮询配置
     STATUS_POLLING_INTERVAL: int = 3  # 状态轮询间隔（秒）
     
-    # 安全配置
+    # Security configuration. Generate a unique secret for every deployed environment.
     SECRET_KEY: str 
-    ALGORITHM: str 
-    ACCESS_TOKEN_EXPIRE_MINUTES: int
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value):
+        if isinstance(value, str):
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
 
     model_config = SettingsConfigDict(
         env_file=".env", 

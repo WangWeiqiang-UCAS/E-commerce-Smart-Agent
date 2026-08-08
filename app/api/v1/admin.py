@@ -1,207 +1,98 @@
-# app/api/v1/admin.py
+"""Administrator read-only conversation API.
+
+Every endpoint is guarded by ``get_admin_user_id``, which requires an
+``is_admin`` claim in a server-signed JWT. There are no approval or refund
+transitions here: refund decisions belong to the Java after-sales state
+machine and its audited action endpoints.
 """
-管理员 API
-"""
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
-from app.core.security import get_current_user_id  
+from sqlalchemy import func
+from sqlmodel import desc, select
+
 from app.core.database import async_session_maker
-from app.models.audit import AuditLog, AuditAction, RiskLevel
-from app.models.refund import RefundApplication, RefundStatus
-from app.models.message import MessageCard, MessageType, MessageStatus
-from app.websocket.manager import manager
-from app.tasks.refund_tasks import process_refund_payment, send_refund_sms
-from sqlmodel import select, desc, or_
+from app.core.security import get_admin_user_id
+from app.models.message import MessageCard
 
 router = APIRouter()
 
 
-class AuditTask(BaseModel):
-    """审核任务"""
-    audit_log_id: int
+class ThreadSummary(BaseModel):
     thread_id: str
-    user_id: int
-    refund_application_id: Optional[int]
-    order_id: Optional[int]
-    trigger_reason: str
-    risk_level: str
-    context_snapshot: Dict[str, Any]
+    message_count: int
+    last_message_at: str
+    last_sender_type: Optional[str] = None
+    last_content: Optional[Dict[str, Any]] = None
+
+
+class ThreadMessage(BaseModel):
+    id: int
+    thread_id: str
+    message_type: str
+    status: str
+    sender_type: str
+    sender_id: Optional[int]
+    content: Dict[str, Any]
     created_at: str
 
 
-class AdminDecisionRequest(BaseModel):
-    """管理员决策请求"""
-    action: str  # "APPROVE" | "REJECT"
-    admin_comment: Optional[str] = None
+def _message_type_value(message_type) -> str:
+    return message_type.value if hasattr(message_type, "value") else str(message_type)
 
 
-class AdminDecisionResponse(BaseModel):
-    """管理员决策响应"""
-    success: bool
-    message: str
-    audit_log_id: int
-    action: str
-
-
-@router.get("/admin/tasks", response_model=List[AuditTask])
-async def get_pending_tasks(
-    risk_level: Optional[str] = None,
-    current_admin_id: int = Depends(get_current_user_id)  # TODO: 改为管理员认证
-):
-    """
-    获取待审核任务列表
-    
-    Query Params:
-        risk_level: 可选，筛选风险等级 (HIGH, MEDIUM, LOW)
-    """
+@router.get("/threads", response_model=list[ThreadSummary])
+async def list_threads(admin_id: int = Depends(get_admin_user_id)):
+    """Recent conversation threads and their latest message snippet."""
     async with async_session_maker() as session:
-        # 构建查询
-        stmt = select(AuditLog).where(
-            AuditLog.action == AuditAction.PENDING
-        ).order_by(desc(AuditLog.created_at))
-        
-        if risk_level: 
-            stmt = stmt.where(AuditLog.risk_level == risk_level)
-        
-        result = await session.execute(stmt)
-        audit_logs = result.scalars().all()
-        
-        # 转换为响应格式
-        tasks = []
-        for log in audit_logs: 
-            tasks.append(AuditTask(
-                audit_log_id=log.id,
-                thread_id=log.thread_id,
-                user_id=log.user_id,
-                refund_application_id=log.refund_application_id,
-                order_id=log.order_id,
-                trigger_reason=log.trigger_reason,
-                risk_level=log.risk_level,
-                context_snapshot=log.context_snapshot,
-                created_at=log.created_at.isoformat(),
+        rows = (await session.exec(
+            select(
+                MessageCard.thread_id,
+                func.count(MessageCard.id),
+                func.max(MessageCard.created_at),
+            )
+            .group_by(MessageCard.thread_id)
+            .order_by(desc(func.max(MessageCard.created_at)))
+            .limit(100)
+        )).all()
+        summaries = []
+        for thread_id, count, last_at in rows:
+            latest = (await session.exec(
+                select(MessageCard)
+                .where(MessageCard.thread_id == thread_id)
+                .order_by(desc(MessageCard.created_at))
+                .limit(1)
+            )).first()
+            summaries.append(ThreadSummary(
+                thread_id=thread_id,
+                message_count=int(count),
+                last_message_at=last_at.isoformat(),
+                last_sender_type=latest.sender_type if latest else None,
+                last_content=latest.content if latest else None,
             ))
-        
-        return tasks
+    return summaries
 
 
-@router.post("/admin/resume/{audit_log_id}", response_model=AdminDecisionResponse)
-async def admin_decision(
-    audit_log_id: int,
-    request: AdminDecisionRequest,
-    current_admin_id: int = Depends(get_current_user_id)  # TODO: 改为管理员认证
-):
-    """
-    管理员决策接口
-    
-    Path Params:
-        audit_log_id: 审计日志ID
-    
-    Body:
-        action:  APPROVE | REJECT
-        admin_comment:  管理员备注
-    """
+@router.get("/threads/{thread_id}", response_model=list[ThreadMessage])
+async def get_thread_messages(thread_id: str, admin_id: int = Depends(get_admin_user_id)):
+    """Full message history for one conversation thread."""
     async with async_session_maker() as session:
-        # 1. 查询审计日志
-        result = await session.execute(
-            select(AuditLog).where(AuditLog.id == audit_log_id)
+        rows = (await session.exec(
+            select(MessageCard)
+            .where(MessageCard.thread_id == thread_id)
+            .order_by(MessageCard.created_at)
+        )).all()
+    return [
+        ThreadMessage(
+            id=row.id,
+            thread_id=row.thread_id,
+            message_type=_message_type_value(row.message_type),
+            status=_message_type_value(row.status),
+            sender_type=row.sender_type,
+            sender_id=row.sender_id,
+            content=row.content,
+            created_at=row.created_at.isoformat(),
         )
-        audit_log = result.scalar_one_or_none()
-        
-        if not audit_log:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Audit log not found"
-            )
-        
-        if audit_log.action != AuditAction.PENDING: 
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This audit has already been processed"
-            )
-        
-        # 2. 更新审计日志
-        action_enum = AuditAction.APPROVE if request.action == "APPROVE" else AuditAction.REJECT
-        audit_log.action = action_enum
-        audit_log.admin_id = current_admin_id
-        audit_log.admin_comment = request.admin_comment
-        audit_log.reviewed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        
-        session.add(audit_log)
-        
-        # 3. 更新退款申请状态
-        if audit_log.refund_application_id:
-            refund_result = await session.execute(
-                select(RefundApplication).where(
-                    RefundApplication.id == audit_log.refund_application_id
-                )
-            )
-            refund = refund_result.scalar_one_or_none()
-            
-            if refund:
-                if action_enum == AuditAction.APPROVE:
-                    refund.status = RefundStatus.APPROVED
-                    refund.admin_note = request.admin_comment
-                    refund.reviewed_by = current_admin_id
-                    refund.reviewed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-                    
-                    # 4. 触发异步任务：退款 + 短信通知
-                    process_refund_payment.delay(
-                        refund_id=refund.id,
-                        amount=float(refund.refund_amount),
-                        payment_method="原支付方式"
-                    )
-                    
-                    send_refund_sms.delay(
-                        refund_id=refund.id,
-                        phone="138****1234",  # TODO: 从用户表获取
-                        message=f"您的退款申请已通过，退款金额¥{refund.refund_amount}将在3-5个工作日退回。"
-                    )
-                    
-                else: 
-                    refund.status = RefundStatus.REJECTED
-                    refund.admin_note = request.admin_comment
-                    refund.reviewed_by = current_admin_id
-                    refund.reviewed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-                
-                session.add(refund)
-        
-        # 5. 创建状态变更消息卡片
-        status_message = " 审核通过，资金将在3-5个工作日内原路退回" if action_enum == AuditAction.APPROVE else f" 审核未通过: {request.admin_comment}"
-        
-        message_card = MessageCard(
-            thread_id=audit_log.thread_id,
-            message_type=MessageType.AUDIT_CARD,
-            status=MessageStatus.SENT,
-            content={
-                "card_type": "audit_result",
-                "action": request.action,
-                "message": status_message,
-                "admin_comment": request.admin_comment,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-            sender_type="admin",
-            sender_id=current_admin_id,
-            receiver_id=audit_log.user_id,
-        )
-        session.add(message_card)
-        
-        await session.commit()
-        
-        # 6. 通过 WebSocket 实时推送状态变更
-        await manager.notify_status_change(
-            thread_id=audit_log.thread_id,
-            status=request.action,
-            data={
-                "message": status_message,
-                "admin_comment": request.admin_comment,
-            }
-        )
-        
-        return AdminDecisionResponse(
-            success=True,
-            message=f"审核决策已提交:  {request.action}",
-            audit_log_id=audit_log_id,
-            action=request.action,
-        )
+        for row in rows
+    ]

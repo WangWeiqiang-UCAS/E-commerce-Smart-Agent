@@ -7,7 +7,7 @@ class AgentState(TypedDict):
     question: str
     user_id: int  
     
-    # 意图标签:  "POLICY" 或 "ORDER" 或 "REFUND" 或 "OTHER"
+    # 意图标签:  "GUIDE" | "ORDER" | "POLICY" | "REFUND" | "OTHER"
     intent: Optional[str]
     
     # 历史记录 (用于多轮对话)
@@ -18,6 +18,15 @@ class AgentState(TypedDict):
     
     # 查到的订单数据 
     order_data: Optional[dict]
+
+    # 导购子图：商品搜索结果（来自 Java 只读 Tool）
+    products: Optional[List[dict]]
+
+    # 售后子图：售后进度（来自 Java 只读 Tool）
+    after_sale_data: Optional[dict]
+
+    # 售后子图：写操作预览交接载荷（仅在用户显式确认后产生）
+    handoff: Optional[dict]
     
     # v4.0 新增：会话 ID
     thread_id: str
