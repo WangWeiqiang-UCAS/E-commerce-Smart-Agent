@@ -25,6 +25,12 @@ public class AgentCommerceReadServiceImpl implements AgentCommerceReadService {
     }
 
     @Override
+    public AgentCommerceRead.MemberIdentity currentMemberIdentity() {
+        var member = memberService.getCurrentMember();
+        return new AgentCommerceRead.MemberIdentity(member.getId(), member.getUsername());
+    }
+
+    @Override
     public AgentCommerceRead.LogisticsResponse logistics(Long orderId) {
         OmsOrder order = ownedOrder(orderId);
         return new AgentCommerceRead.LogisticsResponse(order.getId(), order.getStatus(),

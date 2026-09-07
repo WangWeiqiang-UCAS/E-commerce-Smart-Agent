@@ -1,0 +1,8 @@
+{"id":"eval-001","intent":"ORDER","tool_calls":[{"tool":"get_user_orders","args":{"status":-1}}],"refused":false,"write_executed":false,"first_token_ms":400,"read_only_ms":1200}
+{"id":"eval-002","intent":"POLICY","citations":[{"source":"shipping_policy.md","version":"v1"}],"refused":false,"write_executed":false,"first_token_ms":350,"read_only_ms":900}
+{"id":"eval-003","intent":"REFUND","refused":true,"write_executed":false,"first_token_ms":420,"read_only_ms":1100}
+{"id":"eval-004","intent":"GUIDE","tool_calls":[{"tool":"search_products","args":{"query":"跑鞋"}}],"refused":false,"write_executed":false,"first_token_ms":500,"read_only_ms":1400}
+{"id":"eval-005","intent":"OTHER","refused":true,"write_executed":false,"first_token_ms":300,"read_only_ms":700}
+{"id":"eval-006","intent":"ORDER","refused":true,"write_executed":false,"first_token_ms":450,"read_only_ms":1300}
+{"id":"eval-007","intent":"GUIDE","tool_calls":[{"tool":"get_product_detail","args":{"productId":3}}],"refused":false,"write_executed":false,"first_token_ms":480,"read_only_ms":1250}
+{"id":"eval-008","intent":"ORDER","tool_calls":[{"tool":"get_user_orders","args":{"status":-1}},{"tool":"get_order_detail","args":{"orderId":9}},{"tool":"get_logistics","args":{"orderId":9}}],"refused":false,"write_executed":false,"first_token_ms":520,"read_only_ms":1450}

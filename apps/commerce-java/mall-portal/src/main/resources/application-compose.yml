@@ -1,8 +1,8 @@
 spring:
   datasource:
     url: jdbc:mysql://mall-mysql:3306/mall?useUnicode=true&characterEncoding=utf-8&serverTimezone=UTC&useSSL=false
-    username: root
-    password: root
+    username: ${MALL_MYSQL_USER}
+    password: ${MALL_MYSQL_PASSWORD}
   data:
     mongodb:
       host: mall-mongo
@@ -16,5 +16,24 @@ spring:
     host: rabbitmq
     port: 5672
     virtual-host: /
-    username: ${RABBITMQ_DEFAULT_USER:guest}
-    password: ${RABBITMQ_DEFAULT_PASS:guest}
+    username: ${RABBITMQ_DEFAULT_USER}
+    password: ${RABBITMQ_DEFAULT_PASS}
+    publisher-confirm-type: correlated
+
+jwt:
+  # Compose must receive a non-default secret through the deployment environment.
+  secret: ${COMMERCE_JWT_SECRET}
+
+object-storage:
+  endpoint: ${MINIO_ENDPOINT}
+  access-key: ${MINIO_ACCESS_KEY}
+  secret-key: ${MINIO_SECRET_KEY}
+  bucket: ${MINIO_EVIDENCE_BUCKET:commerce-evidence}
+
+management:
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          # The standalone observability Compose stack shares ecommerce_internal.
+          endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://otel-collector:4318/v1/traces}

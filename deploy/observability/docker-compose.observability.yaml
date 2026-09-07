@@ -23,8 +23,13 @@ services:
   grafana:
     image: grafana/grafana:11.3.1
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD before starting Grafana}
     volumes:
       - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
     ports:
       - "3002:3000"
+
+networks:
+  default:
+    external: true
+    name: ecommerce_internal

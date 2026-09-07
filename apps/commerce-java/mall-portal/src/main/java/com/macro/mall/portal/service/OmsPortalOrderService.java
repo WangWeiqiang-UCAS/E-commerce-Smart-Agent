@@ -44,6 +44,13 @@ public interface OmsPortalOrderService {
     void cancelOrder(Long orderId);
 
     /**
+     * Cancel an order requested by the authenticated member. Internal timeout
+     * consumers must continue to use {@link #cancelOrder(Long)} instead.
+     */
+    @Transactional
+    boolean cancelOrderForCurrentMember(Long orderId);
+
+    /**
      * 发送延迟消息取消订单
      */
     void sendDelayMessageCancelOrder(Long orderId);

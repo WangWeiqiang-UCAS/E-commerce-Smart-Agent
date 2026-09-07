@@ -29,12 +29,19 @@ Java preview/confirm endpoints.
 
 - Order ownership is derived from the Java authenticated principal.
 - PII is redacted before any LLM call (`app/graph/safety.py`).
+- Customer chat questions are also redacted at the API boundary before they
+  enter Agent state, checkpoints, or persisted conversation messages.
 - Retrieved policy text is labeled as untrusted reference data and citations
   carry `source`, `version`, `chunk_id`, and `document_id`.
+- Policy ETL replaces a source in one database transaction: previous chunks
+  remain active if embedding or staging any replacement chunk fails, and an
+  empty replacement is rejected.
 - Tool names/parameters/timeouts are bounded in `CommerceClient` and the Java
   controller; rate limits apply per user on chat and resume.
 - Model failures fail closed to `OTHER` (fallback) and the commerce path is
   never blocked by Agent availability.
+- An empty retrieval/tool evidence set never reaches the model; the runtime
+  returns a deterministic request-for-reference response instead.
 
 ## Checkpoints
 

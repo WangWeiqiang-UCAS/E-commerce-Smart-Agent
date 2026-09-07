@@ -5,7 +5,19 @@ info:
   description: Anti-corruption API between the agent runtime and commerce system.
 servers:
   - url: https://commerce.example.internal
+security:
+  - bearerAuth: []
 paths:
+  /agent/commerce/identity:
+    get:
+      operationId: getAuthenticatedMemberIdentity
+      summary: Get the Java-authenticated member ID used only to namespace Agent sessions
+      responses:
+        '200':
+          description: Minimal member identity; no profile or contact fields
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommonResultMemberIdentity' }
   /agent/commerce/products/search:
     get:
       operationId: searchProducts
@@ -56,12 +68,15 @@ paths:
       operationId: getUserOrders
       summary: List orders for the authenticated customer
       parameters:
-        - name: cursor
-          in: query
-          schema: { type: string }
         - name: status
           in: query
-          schema: { type: string }
+          schema: { type: integer, enum: [-1, 0, 1, 2, 3, 4], default: -1 }
+        - name: pageNum
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
       responses:
         '200':
           description: Orders
@@ -146,8 +161,56 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CommonResultRefundConfirm' }
+  /agent/commerce/actions/order-cancellation/preview:
+    post:
+      operationId: previewOrderCancellation
+      summary: Validate one pending owned order and create a no-side-effect cancellation preview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderCancellationPreviewRequest' }
+      responses:
+        '200':
+          description: Preview requiring explicit customer confirmation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommonResultOrderCancellationPreview' }
+  /agent/commerce/actions/order-cancellation/confirm:
+    post:
+      operationId: confirmOrderCancellation
+      summary: Consume a confirmed cancellation preview exactly once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderCancellationConfirmRequest' }
+      responses:
+        '200':
+          description: Order cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommonResultOrderCancellationConfirm' }
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
+    CommonResultMemberIdentity:
+      type: object
+      required: [code, data]
+      properties:
+        code: { type: integer, enum: [200] }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/MemberIdentity' }
+    MemberIdentity:
+      type: object
+      required: [memberId, username]
+      properties:
+        memberId: { type: integer, format: int64 }
+        username: { type: string }
     CommonResultOrderPage:
       type: object
       required: [code, data]
@@ -192,6 +255,20 @@ components:
         code: { type: integer, enum: [200] }
         message: { type: string }
         data: { $ref: '#/components/schemas/RefundConfirmResponse' }
+    CommonResultOrderCancellationPreview:
+      type: object
+      required: [code, data]
+      properties:
+        code: { type: integer, enum: [200] }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/OrderCancellationPreview' }
+    CommonResultOrderCancellationConfirm:
+      type: object
+      required: [code, data]
+      properties:
+        code: { type: integer, enum: [200] }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/OrderCancellationConfirmResponse' }
     CommonResultLogistics:
       type: object
       required: [code, data]
@@ -301,6 +378,35 @@ components:
         actionId: { type: integer, format: int64 }
         afterSaleId: { type: integer, format: int64 }
         status: { type: string, enum: [APPLICATION_CREATED] }
+    OrderCancellationPreviewRequest:
+      type: object
+      required: [orderId, agentTraceId]
+      properties:
+        orderId: { type: integer, format: int64 }
+        agentTraceId: { type: string, format: uuid }
+    OrderCancellationPreview:
+      type: object
+      required: [actionToken, previewHash, expiresAt]
+      properties:
+        actionToken: { type: string }
+        previewHash: { type: string }
+        expiresAt: { type: string, format: date-time }
+    OrderCancellationConfirmRequest:
+      type: object
+      required: [actionToken, idempotencyKey, previewHash, agentTraceId, confirmedAt]
+      properties:
+        actionToken: { type: string }
+        idempotencyKey: { type: string, format: uuid }
+        previewHash: { type: string }
+        agentTraceId: { type: string, format: uuid }
+        confirmedAt: { type: string, format: date-time }
+    OrderCancellationConfirmResponse:
+      type: object
+      required: [actionId, orderId, status]
+      properties:
+        actionId: { type: integer, format: int64 }
+        orderId: { type: integer, format: int64 }
+        status: { type: string, enum: [CANCELLED] }
     Logistics:
       type: object
       required: [orderId, orderStatus]

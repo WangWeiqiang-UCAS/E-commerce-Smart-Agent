@@ -1,5 +1,6 @@
 """Chat endpoints: SSE streaming, interrupt-aware confirmation, and history."""
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
@@ -13,10 +14,13 @@ from app.api.v1.schemas import ChatRequest
 from app.core.agent_context import reset_request_context, set_request_context
 from app.core.database import async_session_maker
 from app.core.rate_limit import check_rate_limit
-from app.core.security import get_current_user_id, require_bff_secret
+from app.core.security import get_commerce_member_id, require_bff_secret
+from app.graph.safety import redact_pii
 from app.models.message import MessageCard, MessageStatus, MessageType
+from app.models.thread_assignment import ThreadAssignment, ThreadMode
 
 router = APIRouter()
+LOGGER = logging.getLogger(__name__)
 
 
 class ResumeRequest(BaseModel):
@@ -55,16 +59,29 @@ def _thread_key(user_id: int, thread_id: str) -> str:
     return f"{user_id}_{thread_id}"
 
 
+async def _require_agent_owned_thread(thread_id: str) -> None:
+    """Do not let the Agent answer while a human support owner is assigned."""
+    async with async_session_maker() as session:
+        assignment = (await session.exec(
+            select(ThreadAssignment).where(ThreadAssignment.thread_id == thread_id)
+        )).first()
+    if assignment and assignment.mode == ThreadMode.HUMAN:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A human support agent is handling this conversation.",
+        )
+
+
 @router.post("/chat")
 async def chat(
     http_request: Request,
     request: ChatRequest,
-    current_user_id: int = Depends(get_current_user_id),
+    current_user_id: int = Depends(get_commerce_member_id),
     _: None = Depends(require_bff_secret),
     commerce_access_token: str | None = Header(default=None, alias="X-Commerce-Access-Token"),
 ):
     """Chat endpoint: order, policy, guided selling, and confirmed after-sales."""
-    check_rate_limit(f"chat:{current_user_id}")
+    await check_rate_limit(f"chat:{current_user_id}")
     from app.graph.workflow import app_graph
 
     if app_graph is None:
@@ -74,6 +91,8 @@ async def chat(
         )
 
     thread_id = _thread_key(current_user_id, request.thread_id)
+    await _require_agent_owned_thread(thread_id)
+    safe_question = redact_pii(request.question)
 
     async def event_generator():
         from app.graph.workflow import app_graph
@@ -81,13 +100,15 @@ async def chat(
         context_tokens = set_request_context(commerce_access_token, http_request.state.trace_id)
         config = {"configurable": {"thread_id": thread_id}}
         initial_state = {
-            "question": request.question,
+            "question": safe_question,
             "user_id": current_user_id,
             "thread_id": thread_id,
             "history": [],
             "context": [],
             "order_data": None,
+            "order_detail_loaded": False,
             "products": [],
+            "product_detail": None,
             "after_sale_data": None,
             "handoff": None,
             "answer": "",
@@ -95,7 +116,7 @@ async def chat(
         await _persist_message(
             thread_id,
             MessageType.TEXT,
-            {"message": request.question},
+            {"message": safe_question},
             sender_type="user",
             sender_id=current_user_id,
             receiver_id=current_user_id,
@@ -117,6 +138,15 @@ async def chat(
             # graph pauses, ``snapshot.next`` names the pending node and the
             # pending tasks carry the structured interrupt payload.
             snapshot = await app_graph.aget_state(config)
+            answer = getattr(snapshot, "values", {}).get("answer")
+            if answer:
+                await _persist_message(
+                    thread_id,
+                    MessageType.TEXT,
+                    {"message": answer},
+                    sender_type="agent",
+                    receiver_id=current_user_id,
+                )
             if snapshot.next:
                 interrupt_payload = None
                 for task in snapshot.tasks:
@@ -136,8 +166,12 @@ async def chat(
                     yield f"data: {json.dumps({'interrupt': interrupt_payload}, ensure_ascii=False)}\n\n"
 
             yield "data: [DONE]\n\n"
-        except Exception as exc:  # pragma: no cover - defensive stream termination
-            error_msg = json.dumps({"error": str(exc)}, ensure_ascii=False)
+        except Exception:  # pragma: no cover - defensive stream termination
+            LOGGER.exception("Chat stream failed", extra={"trace_id": http_request.state.trace_id})
+            error_msg = json.dumps(
+                {"error": "The support assistant is temporarily unavailable. Please try again."},
+                ensure_ascii=False,
+            )
             yield f"data: {error_msg}\n\n"
         finally:
             reset_request_context(context_tokens)
@@ -149,12 +183,12 @@ async def chat(
 async def resume_chat(
     http_request: Request,
     request: ResumeRequest,
-    current_user_id: int = Depends(get_current_user_id),
+    current_user_id: int = Depends(get_commerce_member_id),
     _: None = Depends(require_bff_secret),
     commerce_access_token: str | None = Header(default=None, alias="X-Commerce-Access-Token"),
 ):
     """Resume a paused refund confirmation with the user's explicit decision."""
-    check_rate_limit(f"chat:{current_user_id}")
+    await check_rate_limit(f"chat:{current_user_id}")
     from app.graph.workflow import app_graph
 
     if app_graph is None:
@@ -165,6 +199,7 @@ async def resume_chat(
     context_tokens = set_request_context(commerce_access_token, http_request.state.trace_id)
     try:
         thread_id = _thread_key(current_user_id, request.thread_id)
+        await _require_agent_owned_thread(thread_id)
         config = {"configurable": {"thread_id": thread_id}}
         snapshot = await app_graph.aget_state(config)
         if not snapshot.next:
@@ -200,7 +235,7 @@ async def resume_chat(
 @router.get("/chat/history/{thread_id}")
 async def chat_history(
     thread_id: str,
-    current_user_id: int = Depends(get_current_user_id),
+    current_user_id: int = Depends(get_commerce_member_id),
     _: None = Depends(require_bff_secret),
 ):
     """Persisted message history for the current user's thread (refresh-safe)."""
@@ -209,6 +244,7 @@ async def chat_history(
         rows = (await session.exec(
             select(MessageCard)
             .where(MessageCard.thread_id == scoped_thread_id)
+            .where(MessageCard.sender_type != "internal")
             .order_by(desc(MessageCard.created_at))
             .limit(200)
         )).all()
@@ -222,3 +258,19 @@ async def chat_history(
         }
         for row in reversed(rows)
     ]
+
+
+@router.get("/chat/handoff-status/{thread_id}")
+async def handoff_status(
+    thread_id: str,
+    current_user_id: int = Depends(get_commerce_member_id),
+    _: None = Depends(require_bff_secret),
+):
+    """Expose only whether this customer's conversation is human-handled."""
+    scoped_thread_id = _thread_key(current_user_id, thread_id)
+    async with async_session_maker() as session:
+        assignment = (await session.exec(
+            select(ThreadAssignment).where(ThreadAssignment.thread_id == scoped_thread_id)
+        )).first()
+    mode = assignment.mode.value if assignment and hasattr(assignment.mode, "value") else assignment.mode if assignment else ThreadMode.AGENT.value
+    return {"mode": mode}

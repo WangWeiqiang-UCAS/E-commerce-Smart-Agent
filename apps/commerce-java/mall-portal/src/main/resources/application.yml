@@ -14,7 +14,7 @@ mybatis:
 
 jwt:
   tokenHeader: Authorization #JWT存储的请求头
-  secret: mall-portal-secret #JWT加解密使用的密钥
+  secret: ${COMMERCE_JWT_SECRET:mall-portal-dev-only-secret} # local development fallback only
   expiration: 604800 #JWT的超期限时间(60*60*24*7)
   tokenHead: 'Bearer '  #JWT负载中拿到开头
 
@@ -42,6 +42,7 @@ springdoc:
     path: /swagger-ui.html
     # 开启Swagger UI界面
     enabled: true
+
     # 用于配置tag和operation的展开方式，这里配置为都不展开
     doc-expansion: 'none'
   api-docs:
@@ -54,6 +55,15 @@ springdoc:
       packages-to-scan: com.macro.mall.portal.controller
 
 # 自定义redis key
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: never
+
 redis:
   database: mall
   key:

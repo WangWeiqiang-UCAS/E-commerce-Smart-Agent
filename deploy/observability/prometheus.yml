@@ -5,8 +5,8 @@ scrape_configs:
   - job_name: agent-runtime
     metrics_path: /metrics
     static_configs:
-      - targets: ["agent-runtime:8000"]
+      - targets: ["app:8000"]
   - job_name: commerce-java
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ["commerce-java:8085"]
+      - targets: ["commerce_java:8085"]

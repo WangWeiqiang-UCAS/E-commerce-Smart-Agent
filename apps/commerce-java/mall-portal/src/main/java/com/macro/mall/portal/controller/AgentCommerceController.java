@@ -4,12 +4,14 @@ import com.macro.mall.common.api.CommonPage;
 import com.macro.mall.common.api.CommonResult;
 import com.macro.mall.common.exception.Asserts;
 import com.macro.mall.portal.domain.AgentRefundAction;
+import com.macro.mall.portal.domain.AgentOrderCancellationAction;
 import com.macro.mall.portal.domain.AgentCommerceRead;
 import com.macro.mall.portal.domain.AgentProduct;
 import com.macro.mall.portal.domain.OmsOrderDetail;
 import com.macro.mall.portal.domain.PmsPortalProductDetail;
 import com.macro.mall.portal.service.AgentCommerceReadService;
 import com.macro.mall.portal.service.AgentRefundActionService;
+import com.macro.mall.portal.service.AgentOrderCancellationActionService;
 import com.macro.mall.portal.service.OmsPortalOrderService;
 import com.macro.mall.portal.service.PmsPortalProductService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -40,15 +42,24 @@ public class AgentCommerceController {
 
     private final OmsPortalOrderService orderService;
     private final AgentRefundActionService refundActionService;
+    private final AgentOrderCancellationActionService cancellationActionService;
     private final AgentCommerceReadService readService;
     private final PmsPortalProductService productService;
 
     public AgentCommerceController(OmsPortalOrderService orderService, AgentRefundActionService refundActionService,
+                                   AgentOrderCancellationActionService cancellationActionService,
                                    AgentCommerceReadService readService, PmsPortalProductService productService) {
         this.orderService = orderService;
         this.refundActionService = refundActionService;
+        this.cancellationActionService = cancellationActionService;
         this.readService = readService;
         this.productService = productService;
+    }
+
+    @GetMapping("/identity")
+    @Operation(summary = "Get the authenticated member identity for Agent session namespacing")
+    public CommonResult<AgentCommerceRead.MemberIdentity> identity() {
+        return CommonResult.success(readService.currentMemberIdentity());
     }
 
     @GetMapping("/orders")
@@ -126,6 +137,24 @@ public class AgentCommerceController {
             @RequestHeader(value = "X-Trace-Id", required = false) String traceId) {
         requireMatchingTrace(traceId, request.agentTraceId());
         return CommonResult.success(refundActionService.confirm(request));
+    }
+
+    @PostMapping("/actions/order-cancellation/preview")
+    @Operation(summary = "Create a short-lived pending-order cancellation preview; no commerce state is changed")
+    public CommonResult<AgentOrderCancellationAction.PreviewResponse> previewOrderCancellation(
+            @Valid @RequestBody AgentOrderCancellationAction.PreviewRequest request,
+            @RequestHeader(value = "X-Trace-Id", required = false) String traceId) {
+        requireMatchingTrace(traceId, request.agentTraceId());
+        return CommonResult.success(cancellationActionService.preview(request));
+    }
+
+    @PostMapping("/actions/order-cancellation/confirm")
+    @Operation(summary = "Confirm a cancellation preview and cancel one owned pending order idempotently")
+    public CommonResult<AgentOrderCancellationAction.ConfirmResponse> confirmOrderCancellation(
+            @Valid @RequestBody AgentOrderCancellationAction.ConfirmRequest request,
+            @RequestHeader(value = "X-Trace-Id", required = false) String traceId) {
+        requireMatchingTrace(traceId, request.agentTraceId());
+        return CommonResult.success(cancellationActionService.confirm(request));
     }
 
     private void requireMatchingTrace(String headerTraceId, String bodyTraceId) {

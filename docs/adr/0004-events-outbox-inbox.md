@@ -22,3 +22,7 @@ card for human operators.
 
 Message loss windows are bounded by the outbox retry loop. Consumers must never
 assume at-most-once delivery; all projection logic is idempotent.
+Publishers acquire one short database lease at a time and release it before
+waiting for the broker confirm. A lease expires after 60 seconds so a crashed
+publisher cannot strand an event; a late duplicate is safe because the Inbox
+uniqueness key is authoritative.

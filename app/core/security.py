@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, status, Depends, Header
 from fastapi.security import OAuth2PasswordBearer
 from app.core.config import settings
+from app.services.commerce_client import CommerceAPIError, CommerceClient
 
 # 设置 Token 获取的 URL
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
@@ -118,3 +119,14 @@ def get_admin_user_id(token: str = Depends(oauth2_scheme)) -> int:
             detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+async def get_commerce_member_id(token: str = Depends(oauth2_scheme)) -> int:
+    """Resolve a customer identity from Java, the sole member authority."""
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing commerce authentication")
+    try:
+        identity = await CommerceClient(token).get_identity()
+        return int(identity["memberId"])
+    except (CommerceAPIError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid commerce authentication") from exc

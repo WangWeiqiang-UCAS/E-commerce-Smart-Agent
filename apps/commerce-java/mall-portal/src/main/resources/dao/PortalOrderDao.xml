@@ -65,6 +65,37 @@
         <foreach collection="itemList" item="item" separator="," open="(" close=")">
             #{item.productSkuId}
         </foreach>
+        AND lock_stock >= CASE id
+        <foreach collection="itemList" item="item">
+            WHEN #{item.productSkuId} THEN #{item.productQuantity}
+        </foreach>
+        END
+    </update>
+    <update id="lockSkuStock">
+        UPDATE pms_sku_stock
+        SET lock_stock = lock_stock + CASE id
+        <foreach collection="itemList" item="item">
+            WHEN #{item.productSkuId} THEN #{item.productQuantity}
+        </foreach>
+        END
+        WHERE id IN
+        <foreach collection="itemList" item="item" separator="," open="(" close=")">
+            #{item.productSkuId}
+        </foreach>
+        AND stock - lock_stock >= CASE id
+        <foreach collection="itemList" item="item">
+            WHEN #{item.productSkuId} THEN #{item.productQuantity}
+        </foreach>
+        END
+    </update>
+    <update id="markOrderPaidIfPending">
+        UPDATE oms_order
+        SET status = 1,
+            payment_time = NOW(),
+            pay_type = #{payType}
+        WHERE id = #{orderId}
+          AND status = 0
+          AND delete_status = 0
     </update>
     <update id="updateOrderStatus">
         update oms_order
@@ -73,6 +104,30 @@
         <foreach collection="ids" item="id" separator="," open="(" close=")">
             #{id}
         </foreach>
+    </update>
+    <update id="cancelPendingOrder">
+        UPDATE oms_order
+        SET status = 4
+        WHERE id = #{orderId}
+          AND status = 0
+          AND delete_status = 0
+    </update>
+    <update id="confirmReceivedOrder">
+        UPDATE oms_order
+        SET status = 3,
+            confirm_status = 1,
+            receive_time = NOW()
+        WHERE id = #{orderId}
+          AND status = 2
+          AND delete_status = 0
+    </update>
+    <update id="hideTerminalOrderForMember">
+        UPDATE oms_order
+        SET delete_status = 1
+        WHERE id = #{orderId}
+          AND member_id = #{memberId}
+          AND status IN (3, 4)
+          AND delete_status = 0
     </update>
     <update id="releaseSkuStockLock">
         UPDATE pms_sku_stock
@@ -87,5 +142,10 @@
         <foreach collection="itemList" item="item" separator="," open="(" close=")">
             #{item.productSkuId}
         </foreach>
+        AND lock_stock >= CASE id
+        <foreach collection="itemList" item="item">
+            WHEN #{item.productSkuId} THEN #{item.productQuantity}
+        </foreach>
+        END
     </update>
 </mapper>

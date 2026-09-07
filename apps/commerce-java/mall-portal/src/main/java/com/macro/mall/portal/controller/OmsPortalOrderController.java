@@ -49,7 +49,10 @@ public class OmsPortalOrderController {
     @RequestMapping(value = "/paySuccess", method = RequestMethod.POST)
     @ResponseBody
     public CommonResult paySuccess(@RequestParam Long orderId,@RequestParam Integer payType) {
-        Integer count = portalOrderService.paySuccess(orderId,payType);
+        Integer count = 0; // Direct client callbacks are intentionally a no-op.
+        if (orderId != null || payType != null) {
+            return CommonResult.failed("Direct payment success callbacks are disabled; use the verified payment-provider callback.");
+        }
         return CommonResult.success(count, "支付成功");
     }
 
@@ -57,16 +60,14 @@ public class OmsPortalOrderController {
     @RequestMapping(value = "/cancelTimeOutOrder", method = RequestMethod.POST)
     @ResponseBody
     public CommonResult cancelTimeOutOrder() {
-        portalOrderService.cancelTimeOutOrder();
-        return CommonResult.success(null);
+        return CommonResult.failed("Timeout cancellation is managed by trusted background processing.");
     }
 
     @Operation(summary = "取消单个超时订单")
     @RequestMapping(value = "/cancelOrder", method = RequestMethod.POST)
     @ResponseBody
     public CommonResult cancelOrder(Long orderId) {
-        portalOrderService.sendDelayMessageCancelOrder(orderId);
-        return CommonResult.success(null);
+        return CommonResult.failed("Direct cancellation is disabled; create and confirm an order-cancellation preview.");
     }
 
     @Operation(summary = "按状态分页获取用户订单列表")
@@ -93,8 +94,7 @@ public class OmsPortalOrderController {
     @RequestMapping(value = "/cancelUserOrder", method = RequestMethod.POST)
     @ResponseBody
     public CommonResult cancelUserOrder(Long orderId) {
-        portalOrderService.cancelOrder(orderId);
-        return CommonResult.success(null);
+        return CommonResult.failed("Direct cancellation is disabled; create and confirm an order-cancellation preview.");
     }
 
     @Operation(summary = "用户确认收货")

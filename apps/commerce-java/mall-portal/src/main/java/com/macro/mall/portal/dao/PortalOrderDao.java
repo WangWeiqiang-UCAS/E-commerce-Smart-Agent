@@ -21,6 +21,12 @@ public interface PortalOrderDao {
      */
     int updateSkuStock(@Param("itemList") List<OmsOrderItem> orderItemList);
 
+    /** Reserve stock only when every requested SKU still has available units. */
+    int lockSkuStock(@Param("itemList") List<OmsOrderItem> orderItemList);
+
+    /** Atomically transition a pending order once; protects duplicate provider callbacks. */
+    int markOrderPaidIfPending(@Param("orderId") Long orderId, @Param("payType") Integer payType);
+
     /**
      * 获取超时订单
      * @param minute 超时时间（分）
@@ -31,6 +37,15 @@ public interface PortalOrderDao {
      * 批量修改订单状态
      */
     int updateOrderStatus(@Param("ids") List<Long> ids,@Param("status") Integer status);
+
+    /** Transition a pending order to cancelled exactly once. */
+    int cancelPendingOrder(@Param("orderId") Long orderId);
+
+    /** Transition a shipped order to received exactly once. */
+    int confirmReceivedOrder(@Param("orderId") Long orderId);
+
+    /** Hide an owned terminal order exactly once without changing its business status. */
+    int hideTerminalOrderForMember(@Param("orderId") Long orderId, @Param("memberId") Long memberId);
 
     /**
      * 解除取消订单的库存锁定

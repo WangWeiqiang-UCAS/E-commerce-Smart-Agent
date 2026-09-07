@@ -36,3 +36,15 @@ def order_projection(order: dict[str, Any]) -> dict[str, Any]:
             if isinstance(item, dict)
         ],
     }
+
+
+def logistics_projection(logistics: dict[str, Any]) -> dict[str, Any]:
+    """Safe shipment fields permitted in Agent state and model context."""
+    return {
+        "orderId": logistics.get("orderId"),
+        "orderStatus": logistics.get("orderStatus"),
+        "deliveryCompany": logistics.get("deliveryCompany"),
+        "deliverySn": logistics.get("deliverySn"),
+        "deliveryTime": logistics.get("deliveryTime"),
+        "receiveTime": logistics.get("receiveTime"),
+    }

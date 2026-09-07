@@ -18,9 +18,12 @@ class AgentState(TypedDict):
     
     # 查到的订单数据 
     order_data: Optional[dict]
+    order_detail_loaded: bool
+    logistics_data: Optional[dict]
 
     # 导购子图：商品搜索结果（来自 Java 只读 Tool）
     products: Optional[List[dict]]
+    product_detail: Optional[dict]
 
     # 售后子图：售后进度（来自 Java 只读 Tool）
     after_sale_data: Optional[dict]

@@ -21,4 +21,8 @@ public interface OmsOrderReturnApplyDao {
      * 获取申请详情
      */
     OmsOrderReturnApplyResult getDetail(@Param("id")Long id);
+
+    /** Update only when the application is in the expected prior state. */
+    int transitionStatus(@Param("returnApply") OmsOrderReturnApply returnApply,
+                         @Param("expectedStatus") Integer expectedStatus);
 }

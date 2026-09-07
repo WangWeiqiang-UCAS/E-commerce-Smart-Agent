@@ -34,7 +34,10 @@ def _initial_state(**overrides):
         "history": [],
         "context": [],
         "order_data": None,
+        "order_detail_loaded": False,
+        "logistics_data": None,
         "products": [],
+        "product_detail": None,
         "after_sale_data": None,
         "handoff": None,
         "answer": "",
@@ -148,7 +151,89 @@ async def test_guide_subgraph_uses_commerce_search(monkeypatch):
     result = await graph.ainvoke(_initial_state(question="推荐几双跑鞋", intent="GUIDE"), {"configurable": {"thread_id": "t_guide"}})
     assert result["products"][0]["name"] == "Running Shoe"
     assert "description" not in result["products"][0]
-    assert result["answer"] == "Here are matching products."
+    assert result["answer"] == (
+        "Here are matching products.\n\nSources:\n"
+        "[tool name=search_products; result_count=1]"
+    )
+
+
+@pytest.mark.asyncio
+async def test_guide_subgraph_uses_product_detail_for_explicit_product_id(monkeypatch):
+    from app.graph import nodes
+
+    class FakeCommerce:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def get_product_detail(self, product_id):
+            assert product_id == 3
+            return {
+                "product": {"id": 3, "name": "Running Shoe", "price": 299.0, "stock": 8},
+                "skus": [{"id": 31, "skuCode": "RUN-RED-42", "price": 299.0, "stock": 2,
+                          "attributes": "untrusted catalog text"}],
+            }
+
+    monkeypatch.setattr(nodes, "llm", _fake_llm("GUIDE", "Product details."))
+    monkeypatch.setattr(nodes, "CommerceClient", FakeCommerce)
+
+    result = await compile_memory_graph().ainvoke(
+        _initial_state(question="Show product ID 3 details", intent="GUIDE"),
+        {"configurable": {"thread_id": "t_product_detail"}},
+    )
+
+    assert result["product_detail"]["skus"] == [{
+        "id": 31, "skuCode": "RUN-RED-42", "price": 299.0,
+        "promotionPrice": None, "stock": 2,
+    }]
+    assert "attributes" not in str(result["product_detail"])
+    assert "[tool name=get_product_detail; product_id=3]" in result["answer"]
+
+
+@pytest.mark.asyncio
+async def test_order_subgraph_fetches_safe_logistics_for_tracking_questions(monkeypatch):
+    from app.graph import nodes
+
+    class FakeCommerce:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def get_orders(self):
+            return [{
+                "id": 9, "orderSn": "SN9", "status": 0, "payAmount": "19.99",
+                "orderItemList": [],
+            }]
+
+        async def get_order(self, order_id):
+            assert order_id == 9
+            return {
+                "id": 9, "orderSn": "SN9", "status": 2, "payAmount": "19.99",
+                "orderItemList": [],
+            }
+
+        async def get_logistics(self, order_id):
+            assert order_id == 9
+            return {
+                "orderId": 9, "orderStatus": 2, "deliveryCompany": "Carrier",
+                "deliverySn": "TRACK9", "receiverPhone": "13800138000",
+            }
+
+    monkeypatch.setattr(nodes, "llm", _fake_llm("ORDER", "Shipment is in transit."))
+    monkeypatch.setattr(nodes, "CommerceClient", FakeCommerce)
+
+    result = await compile_memory_graph().ainvoke(
+        _initial_state(question="Where is order SN9? Please show tracking.", intent="ORDER"),
+        {"configurable": {"thread_id": "t_logistics"}},
+    )
+
+    assert result["logistics_data"] == {
+        "orderId": 9, "orderStatus": 2, "deliveryCompany": "Carrier",
+        "deliverySn": "TRACK9", "deliveryTime": None, "receiveTime": None,
+    }
+    assert "13800138000" not in str(result["logistics_data"])
+    assert result["order_data"]["status"] == 2
+    assert result["order_detail_loaded"] is True
+    assert "[tool name=get_order_detail; order_id=9]" in result["answer"]
+    assert "[tool name=get_logistics; order_id=9]" in result["answer"]
 
 
 @pytest.mark.asyncio
@@ -184,22 +269,24 @@ async def test_interrupt_is_detectable_via_checkpoint_state(monkeypatch):
     assert payloads and payloads[0]["kind"] == "refund_preview_confirmation"
 
 
-def test_rate_limiter_blocks_excess_requests(monkeypatch):
+@pytest.mark.asyncio
+async def test_rate_limiter_blocks_excess_requests(monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
     monkeypatch.setattr(settings, "RATE_LIMIT_PER_MINUTE", 3)
     for _ in range(3):
-        check_rate_limit("unit:test")
+        await check_rate_limit("unit:test")
     with pytest.raises(HTTPException) as error:
-        check_rate_limit("unit:test")
+        await check_rate_limit("unit:test")
     assert error.value.status_code == 429
 
 
-def test_rate_limiter_can_be_disabled(monkeypatch):
+@pytest.mark.asyncio
+async def test_rate_limiter_can_be_disabled(monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
     monkeypatch.setattr(settings, "RATE_LIMIT_PER_MINUTE", 1)
     for _ in range(5):
-        check_rate_limit("unit:disabled")
+        await check_rate_limit("unit:disabled")

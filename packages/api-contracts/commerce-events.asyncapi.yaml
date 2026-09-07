@@ -1,0 +1,125 @@
+asyncapi: 3.0.0
+info:
+  title: Commerce Domain Events
+  version: 1.0.0
+  description: Versioned RabbitMQ outbox events consumed by the Agent runtime.
+servers:
+  rabbitmq:
+    host: rabbitmq:5672
+    protocol: amqp
+    description: Internal RabbitMQ broker
+channels:
+  commerceEvents:
+    address: mall.agent.events
+    messages:
+      afterSaleCreated:
+        $ref: '#/components/messages/AfterSaleCreated'
+      afterSaleStatusChanged:
+        $ref: '#/components/messages/AfterSaleStatusChanged'
+      orderStatusChanged:
+        $ref: '#/components/messages/OrderStatusChanged'
+      refundCompleted:
+        $ref: '#/components/messages/RefundCompleted'
+operations:
+  publishAfterSaleCreated:
+    action: send
+    channel:
+      $ref: '#/channels/commerceEvents'
+    messages:
+      - $ref: '#/channels/commerceEvents/messages/afterSaleCreated'
+  publishAfterSaleStatusChanged:
+    action: send
+    channel:
+      $ref: '#/channels/commerceEvents'
+    messages:
+      - $ref: '#/channels/commerceEvents/messages/afterSaleStatusChanged'
+  publishOrderStatusChanged:
+    action: send
+    channel:
+      $ref: '#/channels/commerceEvents'
+    messages:
+      - $ref: '#/channels/commerceEvents/messages/orderStatusChanged'
+  publishRefundCompleted:
+    action: send
+    channel:
+      $ref: '#/channels/commerceEvents'
+    messages:
+      - $ref: '#/channels/commerceEvents/messages/refundCompleted'
+components:
+  messages:
+    AfterSaleCreated:
+      name: after_sale.created
+      title: After-sales application created
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AfterSaleCreatedEvent'
+    AfterSaleStatusChanged:
+      name: after_sale.status_changed
+      title: After-sales status changed
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AfterSaleStatusChangedEvent'
+    OrderStatusChanged:
+      name: order.status_changed
+      title: Order status changed
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/OrderStatusChangedEvent'
+    RefundCompleted:
+      name: refund.completed
+      title: Payment refund completed
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RefundCompletedEvent'
+  schemas:
+    EventEnvelope:
+      type: object
+      additionalProperties: false
+      required: [eventId, eventType, schemaVersion, aggregateId, occurredAt]
+      properties:
+        eventId: { type: string, format: uuid }
+        eventType: { type: string, minLength: 1, maxLength: 128 }
+        schemaVersion: { type: integer, minimum: 1 }
+        aggregateId: { type: string, pattern: '^[1-9][0-9]*$' }
+        traceId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+        afterSaleId: { type: string, pattern: '^[1-9][0-9]*$' }
+        status: { type: integer, minimum: 1, maximum: 3 }
+        orderStatus: { type: integer, minimum: 0, maximum: 4 }
+        refundId: { type: string, pattern: '^[1-9][0-9]*$' }
+        refundAmount: { type: string, pattern: '^[0-9]+(\.[0-9]{1,2})?$' }
+    AfterSaleCreatedEvent:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType: { const: after_sale.created }
+            schemaVersion: { const: 1 }
+    AfterSaleStatusChangedEvent:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required: [afterSaleId, status]
+          properties:
+            eventType: { const: after_sale.status_changed }
+            schemaVersion: { const: 1 }
+    OrderStatusChangedEvent:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required: [orderStatus]
+          properties:
+            eventType: { const: order.status_changed }
+            schemaVersion: { const: 1 }
+            orderStatus: { type: integer, minimum: 0, maximum: 4 }
+    RefundCompletedEvent:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required: [afterSaleId, refundId, refundAmount]
+          properties:
+            eventType: { const: refund.completed }
+            schemaVersion: { const: 1 }
+            afterSaleId: { type: string, pattern: '^[1-9][0-9]*$' }
+            refundId: { type: string, pattern: '^[1-9][0-9]*$' }
+            refundAmount: { type: string, pattern: '^[0-9]+(\.[0-9]{1,2})?$' }

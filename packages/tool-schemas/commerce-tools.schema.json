@@ -5,6 +5,7 @@
   "tools": {
     "search_products": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "query": { "type": "string", "maxLength": 200 },
         "brandId": { "type": "integer" },
@@ -16,11 +17,13 @@
     },
     "get_product_detail": {
       "type": "object",
+      "additionalProperties": false,
       "properties": { "productId": { "type": "integer" } },
       "required": ["productId"]
     },
     "get_user_orders": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "status": { "type": "integer", "default": -1 },
         "pageNum": { "type": "integer", "minimum": 1 },
@@ -29,16 +32,19 @@
     },
     "get_order_detail": {
       "type": "object",
+      "additionalProperties": false,
       "properties": { "orderId": { "type": "integer" } },
       "required": ["orderId"]
     },
     "get_logistics": {
       "type": "object",
+      "additionalProperties": false,
       "properties": { "orderId": { "type": "integer" } },
       "required": ["orderId"]
     },
     "get_after_sale_status": {
       "type": "object",
+      "additionalProperties": false,
       "properties": { "afterSaleId": { "type": "integer" } },
       "required": ["afterSaleId"]
     }

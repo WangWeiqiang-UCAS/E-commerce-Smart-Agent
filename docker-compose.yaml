@@ -6,7 +6,7 @@ services:
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env before starting Compose}
       POSTGRES_DB: ${POSTGRES_DB:-knowledge_base}
     ports:
       - "5432:5432"
@@ -50,8 +50,8 @@ services:
       - "5672:5672"
       - "15672:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?Set RABBITMQ_DEFAULT_USER in .env before starting Compose}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?Set RABBITMQ_DEFAULT_PASS in .env before starting Compose}
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -61,16 +61,22 @@ services:
   mall-mysql:
     image: mysql:8.4
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${MALL_MYSQL_ROOT_PASSWORD:?Set MALL_MYSQL_ROOT_PASSWORD in .env before starting Compose}
       MYSQL_DATABASE: mall
+      MYSQL_USER: ${MALL_MYSQL_USER:?Set MALL_MYSQL_USER in .env before starting Compose}
+      MYSQL_PASSWORD: ${MALL_MYSQL_PASSWORD:?Set MALL_MYSQL_PASSWORD in .env before starting Compose}
     ports:
       - "3306:3306"
     volumes:
       - mall_mysql_data:/var/lib/mysql
       - ./apps/commerce-java/document/sql/mall.sql:/docker-entrypoint-initdb.d/01-mall.sql:ro
       - ./apps/commerce-java/document/sql/migrations/V20260808_01__agent_refund_actions.sql:/docker-entrypoint-initdb.d/20-agent-refund-actions.sql:ro
+      - ./apps/commerce-java/document/sql/migrations/V20260820_01__outbox_publish_leases.sql:/docker-entrypoint-initdb.d/21-outbox-publish-leases.sql:ro
+      - ./apps/commerce-java/document/sql/migrations/V20260823_01__agent_order_cancellation_actions.sql:/docker-entrypoint-initdb.d/22-agent-order-cancellation-actions.sql:ro
+      - ./apps/commerce-java/document/sql/migrations/V20260823_02__payment_refund_dispatch.sql:/docker-entrypoint-initdb.d/23-payment-refund-dispatch.sql:ro
+      - ./apps/commerce-java/document/sql/migrations/V20260823_03__after_sale_evidence_attachments.sql:/docker-entrypoint-initdb.d/24-after-sale-evidence-attachments.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -proot"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p$${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 15
@@ -80,19 +86,47 @@ services:
     volumes:
       - mall_mongo_data:/data/db
 
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?Set MINIO_ACCESS_KEY in .env before starting Compose}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?Set MINIO_SECRET_KEY in .env before starting Compose}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      # The MinIO image intentionally does not ship curl/wget. `mc ready` is
+      # provided by the image and verifies that the local server can serve S3.
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
   commerce_java:
     build: ./apps/commerce-java
     ports:
       - "8085:8085"
     environment:
       SPRING_PROFILES_ACTIVE: compose
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+      COMMERCE_JWT_SECRET: ${COMMERCE_JWT_SECRET:?Set COMMERCE_JWT_SECRET in .env before starting Compose}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?Set RABBITMQ_DEFAULT_USER in .env before starting Compose}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?Set RABBITMQ_DEFAULT_PASS in .env before starting Compose}
+      MALL_MYSQL_USER: ${MALL_MYSQL_USER:?Set MALL_MYSQL_USER in .env before starting Compose}
+      MALL_MYSQL_PASSWORD: ${MALL_MYSQL_PASSWORD:?Set MALL_MYSQL_PASSWORD in .env before starting Compose}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?Set MINIO_ACCESS_KEY in .env before starting Compose}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?Set MINIO_SECRET_KEY in .env before starting Compose}
+      MINIO_EVIDENCE_BUCKET: ${MINIO_EVIDENCE_BUCKET:-commerce-evidence}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      OTEL_SERVICE_NAME: commerce-java
     depends_on:
       mall-mysql:
         condition: service_healthy
       mall-mongo:
         condition: service_started
+      minio:
+        condition: service_healthy
       redis:
         condition: service_healthy
       rabbitmq:
@@ -120,6 +154,8 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?Set FIELD_ENCRYPTION_KEY in .env before starting Compose}
     volumes:
       - ./app:/app/app
     restart: unless-stopped
@@ -139,7 +175,7 @@ services:
       - path: .env
         required: false
     environment:
-      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-guest}:${RABBITMQ_DEFAULT_PASS:-guest}@rabbitmq:5672//
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:?Set RABBITMQ_DEFAULT_USER in .env before starting Compose}:${RABBITMQ_DEFAULT_PASS:?Set RABBITMQ_DEFAULT_PASS in .env before starting Compose}@rabbitmq:5672//
     restart: unless-stopped
 
   agent_bff:
@@ -150,10 +186,11 @@ services:
       AGENT_RUNTIME_URL: http://app:8000
       COMMERCE_API_URL: http://commerce_java:8085
       PUBLIC_APP_ORIGIN: http://localhost:3000
-      AGENT_SESSION_COOKIE: agent_access_token
       COMMERCE_SESSION_COOKIE: commerce_access_token
       SESSION_COOKIE_SECURE: "false"
       BFF_TO_AGENT_SHARED_SECRET: ${BFF_SHARED_SECRET:?Set BFF_SHARED_SECRET in .env before starting Compose}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: agent-bff
     depends_on:
       app:
         condition: service_started
@@ -189,3 +226,8 @@ volumes:
   redis_data:
   mall_mysql_data:
   mall_mongo_data:
+  minio_data:
+
+networks:
+  default:
+    name: ecommerce_internal

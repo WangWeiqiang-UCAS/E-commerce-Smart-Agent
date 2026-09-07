@@ -1,10 +1,13 @@
 # app/main.py
 from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.chat import router as chat_router
 from app.api.v1.auth import router as auth_router  # v4.0 新增
 from app.core.config import settings
 from app.core.tracing import TraceIdMiddleware
+from app.core.telemetry import configure_telemetry
+from app.core.metrics import render_prometheus
 from app.core.database import init_db
 from app.graph.workflow import compile_app_graph
 import app.graph.workflow as workflow_module
@@ -25,6 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(TraceIdMiddleware)
+configure_telemetry(app)
 
 # 2. 注册路由
 app.include_router(auth_router, prefix=settings.API_V1_STR, tags=["Auth"])  # v4.0 新增
@@ -57,3 +61,8 @@ async def health_check():
             "管理端只读会话审计"
         ]
     }
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics() -> PlainTextResponse:
+    return PlainTextResponse(render_prometheus(), media_type="text/plain; version=0.0.4; charset=utf-8")

@@ -8,6 +8,7 @@ import com.macro.mall.model.OmsOrder;
 import com.macro.mall.model.OmsOrderItem;
 import com.macro.mall.model.OmsOrderItemExample;
 import com.macro.mall.model.OmsOrderReturnApply;
+import com.macro.mall.model.OmsOrderReturnApplyExample;
 import com.macro.mall.portal.domain.OmsOrderReturnApplyParam;
 import com.macro.mall.portal.service.OmsPortalOrderReturnApplyService;
 import com.macro.mall.portal.service.UmsMemberService;
@@ -15,6 +16,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 import java.math.RoundingMode;
 import java.util.Date;
@@ -39,14 +41,14 @@ public class OmsPortalOrderReturnApplyServiceImpl implements OmsPortalOrderRetur
     private UmsMemberService memberService;
 
     @Override
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public int create(OmsOrderReturnApplyParam returnApply) {
         createAndReturnId(returnApply);
         return 1;
     }
 
     @Override
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public Long createAndReturnId(OmsOrderReturnApplyParam returnApply) {
         if (returnApply.getOrderId() == null || returnApply.getProductId() == null
                 || returnApply.getProductCount() == null || returnApply.getProductCount() < 1) {
@@ -55,6 +57,9 @@ public class OmsPortalOrderReturnApplyServiceImpl implements OmsPortalOrderRetur
         OmsOrder order = orderMapper.selectByPrimaryKey(returnApply.getOrderId());
         if (order == null || !memberService.getCurrentMember().getId().equals(order.getMemberId())) {
             Asserts.fail("Order not found");
+        }
+        if (order.getStatus() == null || order.getStatus() < 1 || order.getStatus() > 3) {
+            Asserts.fail("Only paid orders can enter after-sales processing");
         }
         OmsOrderItemExample itemExample = new OmsOrderItemExample();
         itemExample.createCriteria()
@@ -68,9 +73,24 @@ public class OmsPortalOrderReturnApplyServiceImpl implements OmsPortalOrderRetur
         if (returnApply.getProductCount() > orderItem.getProductQuantity()) {
             Asserts.fail("Return quantity exceeds purchased quantity");
         }
+        OmsOrderReturnApplyExample applyExample = new OmsOrderReturnApplyExample();
+        applyExample.createCriteria()
+                .andOrderIdEqualTo(order.getId())
+                .andProductIdEqualTo(returnApply.getProductId());
+        int alreadyApplied = returnApplyMapper.selectByExample(applyExample).stream()
+                .filter(application -> application.getStatus() == null || application.getStatus() != 3)
+                .mapToInt(application -> application.getProductCount() == null ? 0 : application.getProductCount())
+                .sum();
+        if (alreadyApplied + returnApply.getProductCount() > orderItem.getProductQuantity()) {
+            Asserts.fail("Return quantity exceeds remaining eligible quantity");
+        }
 
         OmsOrderReturnApply realApply = new OmsOrderReturnApply();
         BeanUtils.copyProperties(returnApply,realApply);
+        // Client URLs are not evidence. Attachment object keys are created by
+        // the controlled object-storage flow and linked after the application
+        // has a durable ID.
+        realApply.setProofPics(null);
         // Authoritative order and product data always comes from the commerce database.
         realApply.setOrderSn(order.getOrderSn());
         realApply.setMemberUsername(memberService.getCurrentMember().getUsername());

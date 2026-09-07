@@ -73,13 +73,16 @@ async def process_file(file_path: str, source_name: str, version: str = "", docu
             print("  ⚠️ 警告: 文件为空或无法读取")
             return
 
+        staged_chunk_count = 0
         async with async_session_maker() as session:
             # --- Step 3.1: 幂等清理 ---
             # 同一 source 视为同一知识文档，重跑时先清理旧片段。
             # 新片段写入 document_id/version 元数据，回答引用携带版本号。
             print(f"  broom 清理旧数据 (document_id={document_id}, version={version})...")
             await session.execute(delete(KnowledgeChunk).where(KnowledgeChunk.source == source_name))
-            await session.commit() # 立即提交删除
+            # Keep the prior document visible unless every replacement chunk
+            # has been embedded and staged successfully.
+            await session.flush()
 
             # --- Step 3.2: 分批处理 (Batch Processing) ---
             # 这是规避 OOM 和 API 超时的关键！
@@ -127,7 +130,15 @@ async def process_file(file_path: str, source_name: str, version: str = "", docu
                 
                 # 写入数据库
                 session.add_all(new_chunks)
-                await session.commit() # 分批提交，释放数据库压力
+                await session.flush()
+                staged_chunk_count += len(new_chunks)
+
+            # Deletion and every replacement chunk become visible atomically.
+            # Any embedding/database failure exits the session without a commit,
+            # preserving the previously published policy version.
+            if staged_chunk_count == 0:
+                raise ValueError("Policy replacement contains no non-empty chunks")
+            await session.commit()
                 
         print(f"✅ [Done] {source_name} 处理完毕")
 

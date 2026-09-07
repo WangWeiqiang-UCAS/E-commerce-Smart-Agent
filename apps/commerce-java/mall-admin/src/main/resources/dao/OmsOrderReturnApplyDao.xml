@@ -53,4 +53,20 @@
             LEFT JOIN oms_company_address ca ON ra.company_address_id = ca.id
         WHERE ra.id=#{id};
     </select>
+    <update id="transitionStatus">
+        UPDATE oms_order_return_apply
+        <set>
+            status = #{returnApply.status},
+            <if test="returnApply.returnAmount != null">return_amount = #{returnApply.returnAmount},</if>
+            <if test="returnApply.companyAddressId != null">company_address_id = #{returnApply.companyAddressId},</if>
+            <if test="returnApply.handleTime != null">handle_time = #{returnApply.handleTime},</if>
+            <if test="returnApply.handleMan != null">handle_man = #{returnApply.handleMan},</if>
+            <if test="returnApply.handleNote != null">handle_note = #{returnApply.handleNote},</if>
+            <if test="returnApply.receiveTime != null">receive_time = #{returnApply.receiveTime},</if>
+            <if test="returnApply.receiveMan != null">receive_man = #{returnApply.receiveMan},</if>
+            <if test="returnApply.receiveNote != null">receive_note = #{returnApply.receiveNote},</if>
+        </set>
+        WHERE id = #{returnApply.id}
+          AND status = #{expectedStatus}
+    </update>
 </mapper>

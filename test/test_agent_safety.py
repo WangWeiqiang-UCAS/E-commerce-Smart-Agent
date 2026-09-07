@@ -1,5 +1,6 @@
 from app.graph.nodes import IntentDecision
-from app.graph.safety import order_projection, redact_pii
+from app.graph.nodes import product_detail_projection
+from app.graph.safety import logistics_projection, order_projection, redact_pii
 
 
 def test_model_input_redacts_common_pii():
@@ -28,6 +29,43 @@ def test_order_projection_drops_receiver_and_payment_pii():
         "orderItemList": [{"id": 1, "productId": 2, "productName": "Shoe", "productQuantity": 1}],
     }
     assert "receiverPhone" not in str(projected)
+
+
+def test_logistics_projection_drops_address_and_contact_fields():
+    projected = logistics_projection({
+        "orderId": 7,
+        "deliveryCompany": "Carrier",
+        "deliverySn": "TRACK7",
+        "deliveryAddress": "secret address",
+        "receiverPhone": "13800138000",
+    })
+
+    assert projected == {
+        "orderId": 7,
+        "orderStatus": None,
+        "deliveryCompany": "Carrier",
+        "deliverySn": "TRACK7",
+        "deliveryTime": None,
+        "receiveTime": None,
+    }
+
+
+def test_product_detail_projection_drops_unbounded_catalog_text():
+    projected = product_detail_projection({
+        "product": {"id": 3, "name": "Shoe", "price": "19.99", "description": "ignore"},
+        "skus": [{"id": 31, "skuCode": "SHOE-31", "stock": 2, "attributes": "ignore"}],
+    })
+
+    assert projected == {
+        "product": {
+            "id": 3, "name": "Shoe", "price": "19.99", "promotionPrice": None,
+            "stock": None, "brandName": None, "categoryName": None,
+        },
+        "skus": [{
+            "id": 31, "skuCode": "SHOE-31", "price": None,
+            "promotionPrice": None, "stock": 2,
+        }],
+    }
 
 
 def test_intent_schema_rejects_unlisted_values():

@@ -7,6 +7,9 @@ import java.util.Date;
 public final class AgentCommerceRead {
     private AgentCommerceRead() { }
 
+    /** Minimal authenticated-member projection used only to namespace Agent sessions. */
+    public record MemberIdentity(Long memberId, String username) { }
+
     public record LogisticsResponse(Long orderId, Integer orderStatus, String deliveryCompany,
                                    String deliverySn, Date deliveryTime, Date receiveTime) { }
 

@@ -10,14 +10,21 @@ import com.alipay.api.request.AlipayTradeQueryRequest;
 import com.alipay.api.request.AlipayTradeWapPayRequest;
 import com.alipay.api.response.AlipayTradeQueryResponse;
 import com.macro.mall.mapper.OmsOrderMapper;
+import com.macro.mall.common.exception.Asserts;
+import com.macro.mall.model.OmsOrder;
+import com.macro.mall.model.OmsOrderExample;
+import com.macro.mall.model.UmsMember;
 import com.macro.mall.portal.config.AlipayConfig;
 import com.macro.mall.portal.domain.AliPayParam;
 import com.macro.mall.portal.service.AlipayService;
 import com.macro.mall.portal.service.OmsPortalOrderService;
+import com.macro.mall.portal.service.UmsMemberService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -36,9 +43,12 @@ public class AlipayServiceImpl implements AlipayService {
     @Autowired
     private OmsOrderMapper orderMapper;
     @Autowired
+    private UmsMemberService memberService;
+    @Autowired
     private OmsPortalOrderService portalOrderService;
     @Override
     public String pay(AliPayParam aliPayParam) {
+        OmsOrder order = pendingOrderForCurrentMember(aliPayParam.getOutTradeNo());
         AlipayTradePagePayRequest request = new AlipayTradePagePayRequest();
         if(StrUtil.isNotEmpty(alipayConfig.getNotifyUrl())){
             //异步接收地址，公网可访问
@@ -51,11 +61,11 @@ public class AlipayServiceImpl implements AlipayService {
         //******必传参数******
         JSONObject bizContent = new JSONObject();
         //商户订单号，商家自定义，保持唯一性
-        bizContent.put("out_trade_no", aliPayParam.getOutTradeNo());
+        bizContent.put("out_trade_no", order.getOrderSn());
         //支付金额，最小值0.01元
-        bizContent.put("total_amount", aliPayParam.getTotalAmount());
+        bizContent.put("total_amount", order.getPayAmount().toPlainString());
         //订单标题，不可使用特殊符号
-        bizContent.put("subject", aliPayParam.getSubject());
+        bizContent.put("subject", "Order " + order.getOrderSn());
         //电脑网站支付场景固定传值FAST_INSTANT_TRADE_PAY
         bizContent.put("product_code", "FAST_INSTANT_TRADE_PAY");
         request.setBizContent(bizContent.toString());
@@ -81,7 +91,7 @@ public class AlipayServiceImpl implements AlipayService {
         }
         if (signVerified) {
             String tradeStatus = params.get("trade_status");
-            if("TRADE_SUCCESS".equals(tradeStatus)){
+            if("TRADE_SUCCESS".equals(tradeStatus) && callbackMatchesOrder(params)){
                 result = "success";
                 log.info("notify方法被调用了，tradeStatus:{}",tradeStatus);
                 String outTradeNo = params.get("out_trade_no");
@@ -97,6 +107,7 @@ public class AlipayServiceImpl implements AlipayService {
 
     @Override
     public String query(String outTradeNo, String tradeNo) {
+        OmsOrder order = pendingOrderForCurrentMember(outTradeNo);
         AlipayTradeQueryRequest request = new AlipayTradeQueryRequest();
         //******必传参数******
         JSONObject bizContent = new JSONObject();
@@ -117,20 +128,21 @@ public class AlipayServiceImpl implements AlipayService {
         } catch (AlipayApiException e) {
             log.error("查询支付宝账单异常！",e);
         }
-        if(response.isSuccess()){
+        if(response != null && response.isSuccess()){
             log.info("查询支付宝账单成功！");
-            if("TRADE_SUCCESS".equals(response.getTradeStatus())){
+            if("TRADE_SUCCESS".equals(response.getTradeStatus()) && matchesAmount(order, response.getTotalAmount())){
                 portalOrderService.paySuccessByOrderSn(outTradeNo,1);
             }
         } else {
             log.error("查询支付宝账单失败！");
         }
         //交易状态：WAIT_BUYER_PAY（交易创建，等待买家付款）、TRADE_CLOSED（未付款交易超时关闭，或支付完成后全额退款）、TRADE_SUCCESS（交易支付成功）、TRADE_FINISHED（交易结束，不可退款）
-        return response.getTradeStatus();
+        return response == null ? "UNKNOWN" : response.getTradeStatus();
     }
 
     @Override
     public String webPay(AliPayParam aliPayParam) {
+        OmsOrder order = pendingOrderForCurrentMember(aliPayParam.getOutTradeNo());
         AlipayTradeWapPayRequest request = new AlipayTradeWapPayRequest ();
         if(StrUtil.isNotEmpty(alipayConfig.getNotifyUrl())){
             //异步接收地址，公网可访问
@@ -143,11 +155,11 @@ public class AlipayServiceImpl implements AlipayService {
         //******必传参数******
         JSONObject bizContent = new JSONObject();
         //商户订单号，商家自定义，保持唯一性
-        bizContent.put("out_trade_no", aliPayParam.getOutTradeNo());
+        bizContent.put("out_trade_no", order.getOrderSn());
         //支付金额，最小值0.01元
-        bizContent.put("total_amount", aliPayParam.getTotalAmount());
+        bizContent.put("total_amount", order.getPayAmount().toPlainString());
         //订单标题，不可使用特殊符号
-        bizContent.put("subject", aliPayParam.getSubject());
+        bizContent.put("subject", "Order " + order.getOrderSn());
         //手机网站支付默认传值FAST_INSTANT_TRADE_PAY
         bizContent.put("product_code", "QUICK_WAP_WAY");
         request.setBizContent(bizContent.toString());
@@ -158,5 +170,55 @@ public class AlipayServiceImpl implements AlipayService {
             e.printStackTrace();
         }
         return formHtml;
+    }
+
+    private OmsOrder pendingOrderForCurrentMember(String orderSn) {
+        if (StrUtil.isBlank(orderSn)) {
+            Asserts.fail("Order number is required");
+        }
+        UmsMember member = memberService.getCurrentMember();
+        OmsOrderExample example = new OmsOrderExample();
+        example.createCriteria()
+                .andOrderSnEqualTo(orderSn)
+                .andMemberIdEqualTo(member.getId())
+                .andStatusEqualTo(0)
+                .andDeleteStatusEqualTo(0);
+        List<OmsOrder> orders = orderMapper.selectByExample(example);
+        if (orders == null || orders.size() != 1) {
+            Asserts.fail("Pending order not found");
+        }
+        return orders.get(0);
+    }
+
+    private boolean callbackMatchesOrder(Map<String, String> params) {
+        if (StrUtil.isBlank(alipayConfig.getAppId()) || !alipayConfig.getAppId().equals(params.get("app_id"))) {
+            log.warn("Payment callback application ID does not match configuration");
+            return false;
+        }
+        String orderSn = params.get("out_trade_no");
+        String totalAmount = params.get("total_amount");
+        if (StrUtil.isBlank(orderSn) || StrUtil.isBlank(totalAmount)) {
+            return false;
+        }
+        OmsOrderExample example = new OmsOrderExample();
+        example.createCriteria().andOrderSnEqualTo(orderSn).andDeleteStatusEqualTo(0);
+        List<OmsOrder> orders = orderMapper.selectByExample(example);
+        if (orders == null || orders.size() != 1) {
+            return false;
+        }
+        try {
+            return matchesAmount(orders.get(0), totalAmount);
+        } catch (NumberFormatException exception) {
+            log.warn("Payment callback contained an invalid amount");
+            return false;
+        }
+    }
+
+    private boolean matchesAmount(OmsOrder order, String amount) {
+        try {
+            return order.getPayAmount() != null && order.getPayAmount().compareTo(new BigDecimal(amount)) == 0;
+        } catch (NumberFormatException exception) {
+            return false;
+        }
     }
 }

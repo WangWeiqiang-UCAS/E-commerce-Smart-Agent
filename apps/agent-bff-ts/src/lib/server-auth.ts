@@ -1,7 +1,6 @@
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
-const agentCookie = process.env.AGENT_SESSION_COOKIE ?? "agent_access_token";
 const commerceCookie = process.env.COMMERCE_SESSION_COOKIE ?? "commerce_access_token";
 
 export const sessionCookieOptions = {
@@ -11,14 +10,13 @@ export const sessionCookieOptions = {
   path: "/"
 };
 
-export { agentCookie, commerceCookie };
+export { commerceCookie };
 
 export async function sessionTokens() {
   const store = await cookies();
-  const agent = store.get(agentCookie)?.value;
   const commerce = store.get(commerceCookie)?.value;
-  if (!agent || !commerce) throw new Error("Unauthenticated session");
-  return { agent, commerce };
+  if (!commerce) throw new Error("Unauthenticated session");
+  return { commerce };
 }
 
 export function assertSameOrigin(request: NextRequest) {

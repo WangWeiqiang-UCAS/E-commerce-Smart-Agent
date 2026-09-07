@@ -49,19 +49,28 @@ class Settings(BaseSettings):
     # Java commerce anti-corruption API. This service never connects to its database.
     COMMERCE_API_BASE_URL: str = ""
     COMMERCE_API_TIMEOUT_SECONDS: float = 8.0
+    COMMERCE_API_READ_RETRY_ATTEMPTS: int = 3
     # LLM call budget. Failures should degrade to order cards, FAQ search, or
     # handoff rather than blocking the commerce checkout path.
     LLM_TIMEOUT_SECONDS: float = 60.0
     # RabbitMQ domain-event inbox. Empty disables the standalone consumer.
     RABBITMQ_URL: str = ""
     COMMERCE_EVENT_QUEUE: str = "agent.runtime.events"
+    COMMERCE_EVENT_DEAD_LETTER_QUEUE: str = "agent.runtime.events.dlq"
     # Shared only with the BFF; when set, direct browser access to Agent APIs is rejected.
     BFF_SHARED_SECRET: str = ""
+    # 32-byte URL-safe Fernet key; distinct from JWT signing keys.
+    FIELD_ENCRYPTION_KEY: str = ""
     # Comma-separated explicit origins. Wildcards cannot be used with credentials.
     CORS_ORIGINS: Annotated[List[str], NoDecode] = ["http://localhost:3000"]
     # Per-user fixed-window rate limit on Agent chat endpoints.
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60
+    RATE_LIMIT_REDIS_TIMEOUT_SECONDS: float = 0.25
+    # OpenTelemetry is disabled by default locally. Set the Collector base URL
+    # (for example http://otel-collector:4318) to export traces.
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
+    OTEL_SERVICE_NAME: str = "agent-runtime"
 
     # Security configuration. Generate a unique secret for every deployed environment.
     SECRET_KEY: str 

@@ -14,6 +14,7 @@ import com.macro.mall.portal.service.UmsMemberService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -66,7 +67,7 @@ public class AgentRefundActionServiceImpl implements AgentRefundActionService {
     }
 
     @Override
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public AgentRefundAction.ConfirmResponse confirm(AgentRefundAction.ConfirmRequest request) {
         Long memberId = memberService.getCurrentMember().getId();
         List<Map<String, Object>> actions = jdbcTemplate.queryForList("SELECT * FROM oms_agent_action WHERE action_token_hash=? AND member_id=? AND action_type='REFUND' FOR UPDATE", sha256(request.actionToken()), memberId);
@@ -102,6 +103,9 @@ public class AgentRefundActionServiceImpl implements AgentRefundActionService {
     private OmsOrderItem ownedOrderItem(Long memberId, Long orderId, Long productId, Integer quantity) {
         OmsOrder order = orderMapper.selectByPrimaryKey(orderId);
         if (order == null || !memberId.equals(order.getMemberId())) Asserts.fail("Order not found");
+        if (order.getStatus() == null || order.getStatus() < 1 || order.getStatus() > 3) {
+            Asserts.fail("Only paid orders can enter after-sales processing");
+        }
         OmsOrderItemExample example = new OmsOrderItemExample();
         example.createCriteria().andOrderIdEqualTo(orderId).andProductIdEqualTo(productId);
         List<OmsOrderItem> items = orderItemMapper.selectByExample(example);

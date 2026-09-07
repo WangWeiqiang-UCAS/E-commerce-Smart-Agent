@@ -14,5 +14,6 @@ for key, value in {
     "OPENAI_BASE_URL": "http://localhost",
     "OPENAI_API_KEY": "test-key",
     "SECRET_KEY": "test-secret",
+    "FIELD_ENCRYPTION_KEY": "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
 }.items():
     os.environ.setdefault(key, value)

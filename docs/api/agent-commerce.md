@@ -21,6 +21,28 @@ POST `/agent/commerce/actions/refund/confirm`. Confirm requires `actionToken`,
 `idempotencyKey`, `previewHash`, `agentTraceId`, and `confirmedAt`. It creates
 an after-sales application and writes an `after_sale.created` outbox event.
 Funds are refunded only by the Java after-sales state machine.
+After the approved return is received, Java creates a durable payment refund
+record; the channel dispatcher emits `refund.completed` only after the provider
+accepts the idempotent refund request.
+
+Pending-order cancellation follows the same boundary:
+
+POST `/agent/commerce/actions/order-cancellation/preview` then
+POST `/agent/commerce/actions/order-cancellation/confirm`. The confirmation
+requires `actionToken`, `idempotencyKey`, `previewHash`, `agentTraceId`, and
+`confirmedAt`. Java validates the authenticated owner and that the order is
+still pending, performs one conditional cancellation, then publishes an
+`order.status_changed` outbox event. Browser-facing portal cancellation routes
+remain disabled.
+
+## Customer evidence boundary
+
+After an after-sales application is created, the BFF may call the authenticated
+Portal-only evidence endpoints: `POST /returnApply/evidence/upload`,
+`POST /returnApply/evidence/{afterSaleId}`, and
+`GET /returnApply/evidence/{afterSaleId}/download`. These are not LLM tools.
+They accept only controlled private object keys and issue short-lived download
+URLs after an ownership check.
 
 ## Envelope
 

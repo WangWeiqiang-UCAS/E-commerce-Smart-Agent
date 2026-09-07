@@ -13,10 +13,23 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install poetry==2.2.1
+      - run: poetry run python scripts/verify_sbom.py
       - run: poetry install --with dev --no-interaction
       - run: python -m compileall -q app
       - run: python -m compileall -q scripts test migrations
+      - run: poetry run ruff check app test evals scripts migrations --output-format concise
       - run: poetry run pytest -q
+
+  agent-evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install poetry==2.2.1
+      - run: poetry install --with dev --no-interaction
+      - run: poetry run python -m evals.regression.run --dataset evals/datasets/agent_eval_sample.jsonl --results evals/regression/baseline_results.jsonl
 
   commerce-java:
     runs-on: ubuntu-latest
@@ -32,7 +45,7 @@ jobs:
           cache: maven
       # Agent boundary unit tests run without infrastructure. Full
       # context/Testcontainers suites run against the local Compose stack.
-      - run: mvn -pl mall-portal -am test -Dtest=AgentCommerceControllerTest -Dsurefire.failIfNoSpecifiedTests=false -DskipTests=false
+      - run: mvn -pl mall-portal,mall-admin -am test -Dtest=AgentCommerceControllerTest,OmsPortalOrderControllerTest,OutboxPublisherTest,RefundDispatcherTest,PaymentCallbackIdempotencyTest,PaymentCallbackValidationTest,InventoryReservationAggregationTest,AfterSalesEligibilityTest,OmsOrderReturnApplyStateMachineTest -Dsurefire.failIfNoSpecifiedTests=false -DskipTests=false
 
   agent-bff:
     runs-on: ubuntu-latest
